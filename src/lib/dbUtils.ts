@@ -277,10 +277,10 @@ export const resetClientPin = async (clientId: string, newPin: string) => {
   }
   
   const userRef = doc(db, 'users', clientId);
-  await updateDoc(userRef, {
+  await setDoc(userRef, {
     pin: newPin,
     updatedAt: serverTimestamp()
-  });
+  }, { merge: true });
 };
 
 // AUTO-CANCELACIÓN DE PEDIDOS WEB EXPIRADOS (12 HORAS)

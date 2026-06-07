@@ -116,7 +116,14 @@ export const signInWithPinCustom = async (cedulaOrPin: string, pin?: string) => 
     const matchedDocs = querySnapshot.docs.filter(doc => {
       const data = doc.data();
       if (actualCedula) {
-        return (data.cedula === actualCedula) || (data.username === actualCedula);
+        const cleanStoredCedula = String(data.cedula || '').replace(/\D/g, '');
+        const cleanStoredUsername = String(data.username || '').replace(/\D/g, '');
+        const cleanActualCedula = String(actualCedula).replace(/\D/g, '');
+        
+        return (cleanStoredCedula === cleanActualCedula) || 
+               (cleanStoredUsername === cleanActualCedula) ||
+               (data.cedula === actualCedula) || 
+               (data.username === actualCedula);
       }
       return true;
     });

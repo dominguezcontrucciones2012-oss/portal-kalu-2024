@@ -122,6 +122,14 @@ const ClientsScreen: React.FC = () => {
         email: editingClient.email || '',
         direccion: editingClient.direccion || ''
       });
+      // Also update the users document to ensure login works if cedula changes
+      await updateDocument('users', editingClient.id, {
+        cedula: editingClient.cedula,
+        username: editingClient.cedula,
+        email: editingClient.email || ''
+      }).catch(err => {
+        console.warn("User document not updated (might not exist yet):", err);
+      });
       setEditingClient(null);
       alert("¡Datos del cliente actualizados con éxito!");
     } catch (err) {
