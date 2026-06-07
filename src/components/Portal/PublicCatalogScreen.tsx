@@ -48,6 +48,8 @@ const PublicCatalogScreen: React.FC = () => {
   const [tasaBcv, setTasaBcv] = useState(40.50);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('TODOS');
+  const [portalFueraDeServicio, setPortalFueraDeServicio] = useState(false);
+
   
   // Carrito de compras local
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -126,6 +128,20 @@ const PublicCatalogScreen: React.FC = () => {
       }
     });
 
+    const unsubConfig = subscribeToCollection('configuracion', (data) => {
+      const globalConfig = data.find((c: any) => c.id === 'global');
+      let outOfService = false;
+      if (globalConfig?.portal_fuera_servicio) {
+        outOfService = true;
+      } else {
+        const hour = new Date().getHours();
+        if (hour < 6 || hour >= 18) {
+          outOfService = true;
+        }
+      }
+      setPortalFueraDeServicio(outOfService);
+    });
+
     // Cargar carrito previo del localStorage
     const savedCart = localStorage.getItem('kalu_public_cart');
     if (savedCart) {
@@ -139,6 +155,7 @@ const PublicCatalogScreen: React.FC = () => {
     return () => {
       unsub();
       unsubTasa();
+      unsubConfig();
     };
   }, []);
 
@@ -442,6 +459,37 @@ Estatus: Pendiente por verificar/entregar
     setAuthView('register');
     setShowAuthModal(true);
   };
+
+  if (portalFueraDeServicio && (!user || user.role !== 'admin')) {
+    return (
+      <div 
+        className="min-h-screen text-slate-100 font-sans flex flex-col items-center justify-center p-4 text-center"
+        style={{
+          backgroundImage: "linear-gradient(rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.98)), url('/logo.png')",
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundAttachment: 'fixed'
+        }}
+      >
+        <div className="w-24 h-24 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center mb-6 border border-red-500/30">
+          <Shield size={48} />
+        </div>
+        <h1 className="text-4xl font-black mb-4">PORTAL CERRADO</h1>
+        <p className="text-gray-400 max-w-md text-lg">
+          Nuestro portal de compras se encuentra temporalmente fuera de servicio.
+        </p>
+        <p className="text-[#3498db] font-bold mt-2">
+          El horario de atención es de 6:00 AM a 6:00 PM.
+        </p>
+        <button 
+          onClick={() => window.location.reload()}
+          className="mt-8 px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl font-bold transition-all text-sm uppercase tracking-widest"
+        >
+          Actualizar Página
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div 

@@ -60,6 +60,7 @@ const ClientPortal: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'inicio' | 'tienda' | 'compras'>('inicio');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('TODOS');
+  const [portalFueraDeServicio, setPortalFueraDeServicio] = useState(false);
   
   // Carrito de compras compartido
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -325,6 +326,16 @@ const ClientPortal: React.FC = () => {
         if (globalConfig.propaganda_url) {
           setPropagandaVideoUrl(prev => prev === globalConfig.propaganda_url ? prev : globalConfig.propaganda_url);
         }
+        let outOfService = false;
+        if (globalConfig.portal_fuera_servicio) {
+          outOfService = true;
+        } else {
+          const hour = new Date().getHours();
+          if (hour < 6 || hour >= 18) {
+            outOfService = true;
+          }
+        }
+        setPortalFueraDeServicio(outOfService);
       }
     });
 
@@ -383,6 +394,37 @@ const ClientPortal: React.FC = () => {
           <div className="w-10 h-10 border-4 border-[#075E54] border-t-transparent rounded-full animate-spin" />
           <p className="text-gray-400 font-black uppercase tracking-widest text-[10px]">Cargando tu portal...</p>
         </div>
+      </div>
+    );
+  }
+
+  if (portalFueraDeServicio && (!user || user.role !== 'admin')) {
+    return (
+      <div 
+        className="min-h-screen text-slate-100 font-sans flex flex-col items-center justify-center p-4 text-center"
+        style={{
+          backgroundImage: "linear-gradient(rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.98)), url('/logo.png')",
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundAttachment: 'fixed'
+        }}
+      >
+        <div className="w-24 h-24 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center mb-6 border border-red-500/30">
+          <ShieldCheck size={48} />
+        </div>
+        <h1 className="text-4xl font-black mb-4">PORTAL CERRADO</h1>
+        <p className="text-gray-400 max-w-md text-lg">
+          Nuestro portal de clientes se encuentra temporalmente fuera de servicio.
+        </p>
+        <p className="text-[#3498db] font-bold mt-2">
+          El horario de atención es de 6:00 AM a 6:00 PM.
+        </p>
+        <button 
+          onClick={handleLogout}
+          className="mt-8 px-6 py-3 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-200 rounded-xl font-bold transition-all text-sm uppercase tracking-widest flex items-center gap-2 mx-auto"
+        >
+          <LogOut size={16} /> Cerrar Sesión
+        </button>
       </div>
     );
   }
