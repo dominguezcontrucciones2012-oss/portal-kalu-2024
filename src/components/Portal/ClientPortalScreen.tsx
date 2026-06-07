@@ -327,13 +327,17 @@ const ClientPortal: React.FC = () => {
           setPropagandaVideoUrl(prev => prev === globalConfig.propaganda_url ? prev : globalConfig.propaganda_url);
         }
         let outOfService = false;
-        if (globalConfig.portal_fuera_servicio) {
+        const estado = globalConfig.estado_portal || 'automatico';
+
+        if (estado === 'cerrado' || globalConfig.portal_fuera_servicio === true) {
           outOfService = true;
-        } else {
+        } else if (estado === 'automatico') {
           const hour = new Date().getHours();
           if (hour < 6 || hour >= 18) {
             outOfService = true;
           }
+        } else if (estado === 'abierto') {
+          outOfService = false;
         }
         setPortalFueraDeServicio(outOfService);
       }

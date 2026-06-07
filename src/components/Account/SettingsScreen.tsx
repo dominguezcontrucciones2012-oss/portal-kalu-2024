@@ -24,7 +24,7 @@ const SettingsScreen: React.FC = () => {
     empresa_direccion: 'Sector Las Lomas, Edo. Trujillo',
     mensaje_recibo: '¡Gracias por su compra! Vuelva pronto.',
     moneda_principal: 'USD',
-    portal_fuera_servicio: false
+    estado_portal: 'automatico'
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -172,36 +172,46 @@ const SettingsScreen: React.FC = () => {
            </div>
         </div>
 
-        {/* Estado del Portal */}
-        <div className="bg-white/5 border border-white/10 p-8 rounded-[2.5rem] space-y-4">
-           <h3 className="text-lg font-bold flex items-center gap-2">
-             <Globe className="text-purple-400" size={20} /> Estado del Portal Público
-           </h3>
-           <p className="text-sm text-gray-500 font-medium">Controla si los clientes pueden acceder al portal de compras o si se encuentra en mantenimiento.</p>
-           
-           <div className="flex items-center gap-4 mt-4">
-             <button
-              type="button"
-              onClick={() => setConfig({...config, portal_fuera_servicio: false})}
-              className={cn(
-                "px-6 py-3 rounded-xl text-xs font-black tracking-widest transition-all",
-                !config.portal_fuera_servicio ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20" : "bg-white/5 text-gray-500 hover:bg-white/10"
-              )}
-             >
-               PORTAL ACTIVO
-             </button>
-             <button
-              type="button"
-              onClick={() => setConfig({...config, portal_fuera_servicio: true})}
-              className={cn(
-                "px-6 py-3 rounded-xl text-xs font-black tracking-widest transition-all",
-                config.portal_fuera_servicio ? "bg-red-500 text-white shadow-lg shadow-red-500/20" : "bg-white/5 text-gray-500 hover:bg-white/10"
-              )}
-             >
-               FUERA DE SERVICIO
-             </button>
-           </div>
-        </div>
+         {/* Estado del Portal */}
+         <div className="bg-white/5 border border-white/10 p-8 rounded-[2.5rem] space-y-4">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <Globe className="text-purple-400" size={20} /> Estado del Portal Público
+            </h3>
+            <p className="text-sm text-gray-500 font-medium">Controla si los clientes pueden acceder al portal de compras o si se encuentra en mantenimiento.</p>
+            
+            <div className="flex flex-wrap items-center gap-4 mt-4">
+              <button
+               type="button"
+               onClick={() => setConfig({...config, estado_portal: 'automatico'})}
+               className={cn(
+                 "px-6 py-3 rounded-xl text-xs font-black tracking-widest transition-all",
+                 (!config.estado_portal || config.estado_portal === 'automatico') ? "bg-[#3498db] text-white shadow-lg shadow-[#3498db]/20" : "bg-white/5 text-gray-500 hover:bg-white/10"
+               )}
+              >
+                AUTOMÁTICO (6am a 6pm)
+              </button>
+              <button
+               type="button"
+               onClick={() => setConfig({...config, estado_portal: 'abierto'})}
+               className={cn(
+                 "px-6 py-3 rounded-xl text-xs font-black tracking-widest transition-all",
+                 config.estado_portal === 'abierto' ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20" : "bg-white/5 text-gray-500 hover:bg-white/10"
+               )}
+              >
+                FORZAR ABIERTO
+              </button>
+              <button
+               type="button"
+               onClick={() => setConfig({...config, estado_portal: 'cerrado'})}
+               className={cn(
+                 "px-6 py-3 rounded-xl text-xs font-black tracking-widest transition-all",
+                 config.estado_portal === 'cerrado' ? "bg-red-500 text-white shadow-lg shadow-red-500/20" : "bg-white/5 text-gray-500 hover:bg-white/10"
+               )}
+              >
+                FORZAR CERRADO
+              </button>
+            </div>
+         </div>
 
         <div className="flex items-center justify-between p-8 bg-[#3498db]/10 border border-[#3498db]/20 rounded-[2.5rem]">
            <div className="flex items-center gap-4">

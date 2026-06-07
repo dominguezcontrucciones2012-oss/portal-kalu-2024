@@ -204,7 +204,7 @@ export interface Configuration {
   mensaje_recibo: string;
   logo_url?: string;
   moneda_principal: 'USD' | 'BS';
-  portal_fuera_servicio?: boolean;
+  estado_portal?: 'automatico' | 'abierto' | 'cerrado';
 }
 
 export interface Movement {
