@@ -1,0 +1,42 @@
+[
+  {
+    "id": "tasa-2026-05-25",
+    "fecha": "2026-05-25",
+    "valor": 530.5,
+    "fuente": "Manual / Interna",
+    "estatus": "Manual",
+    "sincronizadoEn": "2026-05-25T23:48:29.987Z"
+  },
+  {
+    "id": "tasa-2026-05-26",
+    "fecha": "2026-05-26",
+    "valor": 535.39,
+    "fuente": "Manual / Interna",
+    "estatus": "Manual",
+    "sincronizadoEn": "2026-05-26T18:15:07.532Z"
+  },
+  {
+    "id": "tasa-2026-05-27",
+    "fecha": "2026-05-27",
+    "valor": 535.39,
+    "fuente": "Manual / Interna",
+    "estatus": "Manual",
+    "sincronizadoEn": "2026-05-27T10:54:44.487Z"
+  },
+  {
+    "id": "tasa-2026-05-28",
+    "fecha": "2026-05-28",
+    "valor": 535.39,
+    "fuente": "Manual / Interna",
+    "estatus": "Manual",
+    "sincronizadoEn": "2026-05-28T22:02:05.982Z"
+  },
+  {
+    "id": "tasa-2026-05-29",
+    "fecha": "2026-05-29",
+    "valor": 544.58,
+    "fuente": "Manual / Interna",
+    "estatus": "Manual",
+    "sincronizadoEn": "2026-05-29T02:01:24.308Z"
+  }
+]

@@ -1,0 +1,6 @@
+{
+  "name": "KALUNEVA2024",
+  "description": "Sistema Administrativo de Alto Nivel - Control de Inventario, POS en tiempo real, Gestión de Clientes, Libreta de Productores e Inteligencia de Mercado con IA.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["POS", "Inventory Management", "Client Portal", "Producer Ledger", "AI Analytics", "Firebase Authentication"]
+}

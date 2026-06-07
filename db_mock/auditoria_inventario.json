@@ -1,0 +1,123 @@
+[
+  {
+    "producto_id": "4",
+    "usuario_id": "c5",
+    "tipo_movimiento": "SALIDA",
+    "cantidad": 1,
+    "motivo": "VENTA_TIENDA_VIRTUAL",
+    "fecha": "2026-05-25T15:12:40.765Z",
+    "id": "a1_1779721960782",
+    "createdAt": "2026-05-25T15:12:40.782Z",
+    "updatedAt": "2026-05-25T15:12:40.782Z"
+  },
+  {
+    "producto_id": "4",
+    "usuario_id": "c4",
+    "tipo_movimiento": "SALIDA",
+    "cantidad": 1,
+    "motivo": "VENTA_TIENDA_VIRTUAL",
+    "fecha": "2026-05-25T22:32:57.230Z",
+    "id": "a2_1779748377247",
+    "createdAt": "2026-05-25T22:32:57.247Z",
+    "updatedAt": "2026-05-25T22:32:57.247Z"
+  },
+  {
+    "producto_id": "4",
+    "usuario_id": "c4",
+    "tipo_movimiento": "SALIDA",
+    "cantidad": 1,
+    "motivo": "VENTA_TIENDA_VIRTUAL",
+    "fecha": "2026-05-25T23:19:35.577Z",
+    "id": "a3_1779751175590",
+    "createdAt": "2026-05-25T23:19:35.590Z",
+    "updatedAt": "2026-05-25T23:19:35.590Z"
+  },
+  {
+    "producto_id": "4",
+    "usuario_id": "c5",
+    "tipo_movimiento": "SALIDA",
+    "cantidad": 1,
+    "motivo": "VENTA_TIENDA_VIRTUAL",
+    "fecha": "2026-05-26T01:55:28.329Z",
+    "id": "a4_1779760528340",
+    "createdAt": "2026-05-26T01:55:28.340Z",
+    "updatedAt": "2026-05-26T01:55:28.340Z"
+  },
+  {
+    "producto_id": "4",
+    "usuario_id": "c5",
+    "tipo_movimiento": "SALIDA",
+    "cantidad": 3,
+    "motivo": "VENTA_TIENDA_VIRTUAL",
+    "fecha": "2026-05-26T02:41:10.363Z",
+    "id": "a5_1779763270375",
+    "createdAt": "2026-05-26T02:41:10.375Z",
+    "updatedAt": "2026-05-26T02:41:10.375Z"
+  },
+  {
+    "producto_id": "4",
+    "usuario_id": "c5",
+    "tipo_movimiento": "SALIDA",
+    "cantidad": 2,
+    "motivo": "VENTA_TIENDA_VIRTUAL",
+    "fecha": "2026-05-26T13:50:06.736Z",
+    "id": "a6_1779803406754",
+    "createdAt": "2026-05-26T13:50:06.754Z",
+    "updatedAt": "2026-05-26T13:50:06.754Z"
+  },
+  {
+    "producto_id": "4",
+    "usuario_id": "c5",
+    "tipo_movimiento": "SALIDA",
+    "cantidad": 2,
+    "motivo": "VENTA_TIENDA_VIRTUAL",
+    "fecha": "2026-05-26T21:19:58.156Z",
+    "id": "a7_1779830398364",
+    "createdAt": "2026-05-26T21:19:58.364Z",
+    "updatedAt": "2026-05-26T21:19:58.364Z"
+  },
+  {
+    "producto_id": "4",
+    "usuario_id": "c5",
+    "tipo_movimiento": "SALIDA",
+    "cantidad": 2,
+    "motivo": "VENTA_TIENDA_VIRTUAL",
+    "fecha": "2026-05-27T02:49:13.054Z",
+    "id": "a8_1779850154997",
+    "createdAt": "2026-05-27T02:49:14.997Z",
+    "updatedAt": "2026-05-27T02:49:14.997Z"
+  },
+  {
+    "producto_id": "1",
+    "usuario_id": "c5",
+    "tipo_movimiento": "SALIDA",
+    "cantidad": 1,
+    "motivo": "VENTA_TIENDA_VIRTUAL",
+    "fecha": "2026-05-27T03:21:01.337Z",
+    "id": "a9_1779852061356",
+    "createdAt": "2026-05-27T03:21:01.356Z",
+    "updatedAt": "2026-05-27T03:21:01.356Z"
+  },
+  {
+    "producto_id": "5",
+    "usuario_id": "c5",
+    "tipo_movimiento": "SALIDA",
+    "cantidad": 1,
+    "motivo": "VENTA_TIENDA_VIRTUAL",
+    "fecha": "2026-05-27T03:21:01.426Z",
+    "id": "a10_1779852061507",
+    "createdAt": "2026-05-27T03:21:01.508Z",
+    "updatedAt": "2026-05-27T03:21:01.508Z"
+  },
+  {
+    "producto_id": "5",
+    "usuario_id": "current-user",
+    "tipo_movimiento": "SALIDA",
+    "cantidad": 1,
+    "motivo": "VENTA",
+    "fecha": "2026-05-27T13:20:47.549Z",
+    "id": "a11_1779888047560",
+    "createdAt": "2026-05-27T13:20:47.560Z",
+    "updatedAt": "2026-05-27T13:20:47.560Z"
+  }
+]

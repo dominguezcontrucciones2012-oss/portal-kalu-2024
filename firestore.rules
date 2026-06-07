@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper Functions
+    function isSignedIn() { return request.auth != null; }
+    function getUserData() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function hasRole(role) { return isSignedIn() && getUserData().role == role; }
+    function isStaff() { return hasRole('admin') || hasRole('dueno') || hasRole('supervisor') || hasRole('cajero'); }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    
+    // Validation Helpers
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // User Profiles
+    match /users/{userId} {
+      allow get: if isSignedIn() && (isOwner(userId) || isStaff());
+      allow list: if isStaff();
+      allow create: if isSignedIn() && isOwner(userId) && incoming().role == 'cliente';
+      allow update: if isSignedIn() && isOwner(userId) && incoming().role == existing().role;
+    }
+
+    // Products
+    match /products/{productId} {
+      allow read: if isSignedIn();
+      allow write: if isStaff();
+      
+      function isValidProduct(data) {
+        return data.keys().hasAll(['codigo', 'nombre', 'costo_usd', 'precio_normal_usd', 'stock']) &&
+               data.codigo is string && data.stock >= 0;
+      }
+    }
+
+    // Clients
+    match /clients/{clientId} {
+      allow read: if isSignedIn();
+      allow write: if isStaff();
+    }
+
+    // Sales
+    match /sales/{saleId} {
+      allow read: if isSignedIn() && (isStaff() || (incoming() == null && existing().clienteId == request.auth.uid));
+      allow create: if isStaff();
+      allow update, delete: if false; // Invariant: Sales are immutable
+    }
+  }
+}
