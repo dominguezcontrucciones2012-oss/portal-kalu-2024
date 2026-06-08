@@ -1,31 +1,38 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthProvider';
 import Layout from './components/layout/Layout';
-import DashboardScreen from './components/Dashboard/DashboardScreen';
-import POSScreen from './components/POS/POSScreen';
-import InventoryScreen from './components/Inventory/InventoryScreen';
-import ClientsScreen from './components/Clients/ClientsScreen';
-import MorososScreen from './components/Clients/MorososScreen';
-import LedgerScreen from './components/Ledger/LedgerScreen';
-import HistoryScreen from './components/History/HistoryScreen';
-import ReportsScreen from './components/Reports/ReportsScreen';
-import ClientPortal from './components/Portal/ClientPortalScreen';
-import ClosureScreen from './components/Account/ClosureScreen';
-import PurchasesScreen from './components/Inventory/PurchasesScreen';
-import ProvidersScreen from './components/Inventory/ProvidersScreen';
-import ProfileScreen from './components/Account/ProfileScreen';
-import LoginScreen from './components/Auth/LoginScreen';
-import AccountingScreen from './components/Ledger/AccountingScreen';
-import SettingsScreen from './components/Account/SettingsScreen';
-import AIMarketScreen from './components/AI/AIMarketScreen';
-import PublicMarketScreen from './components/Market/PublicMarketScreen';
-import VendorPortalScreen from './components/Market/VendorPortalScreen';
-import ApprovalScreen from './components/Market/ApprovalScreen';
-import PublicCatalogScreen from './components/Portal/PublicCatalogScreen';
-import DispatchScreen from './components/Dispatch/DispatchScreen';
-import DriverPortalScreen from './components/Portal/DriverPortalScreen';
 import { ToastProvider } from './contexts/ToastProvider';
+
+const DashboardScreen = lazy(() => import('./components/Dashboard/DashboardScreen'));
+const POSScreen = lazy(() => import('./components/POS/POSScreen'));
+const InventoryScreen = lazy(() => import('./components/Inventory/InventoryScreen'));
+const ClientsScreen = lazy(() => import('./components/Clients/ClientsScreen'));
+const MorososScreen = lazy(() => import('./components/Clients/MorososScreen'));
+const LedgerScreen = lazy(() => import('./components/Ledger/LedgerScreen'));
+const HistoryScreen = lazy(() => import('./components/History/HistoryScreen'));
+const ReportsScreen = lazy(() => import('./components/Reports/ReportsScreen'));
+const ClientPortal = lazy(() => import('./components/Portal/ClientPortalScreen'));
+const ClosureScreen = lazy(() => import('./components/Account/ClosureScreen'));
+const PurchasesScreen = lazy(() => import('./components/Inventory/PurchasesScreen'));
+const ProvidersScreen = lazy(() => import('./components/Inventory/ProvidersScreen'));
+const ProfileScreen = lazy(() => import('./components/Account/ProfileScreen'));
+const LoginScreen = lazy(() => import('./components/Auth/LoginScreen'));
+const AccountingScreen = lazy(() => import('./components/Ledger/AccountingScreen'));
+const SettingsScreen = lazy(() => import('./components/Account/SettingsScreen'));
+const AIMarketScreen = lazy(() => import('./components/AI/AIMarketScreen'));
+const PublicMarketScreen = lazy(() => import('./components/Market/PublicMarketScreen'));
+const VendorPortalScreen = lazy(() => import('./components/Market/VendorPortalScreen'));
+const ApprovalScreen = lazy(() => import('./components/Market/ApprovalScreen'));
+const PublicCatalogScreen = lazy(() => import('./components/Portal/PublicCatalogScreen'));
+const DispatchScreen = lazy(() => import('./components/Dispatch/DispatchScreen'));
+const DriverPortalScreen = lazy(() => import('./components/Portal/DriverPortalScreen'));
+
+const LoadingFallback = () => (
+  <div className="h-screen w-full bg-[#0f172a] flex items-center justify-center">
+    <div className="w-12 h-12 border-4 border-white/10 border-t-[#3498db] rounded-full animate-spin" />
+  </div>
+);
 
 const Root = () => {
   const { user, loading } = useAuth();
@@ -114,7 +121,9 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <ToastProvider>
-          <Root />
+          <Suspense fallback={<LoadingFallback />}>
+            <Root />
+          </Suspense>
         </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
