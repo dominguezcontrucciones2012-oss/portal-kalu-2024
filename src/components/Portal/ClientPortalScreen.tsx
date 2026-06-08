@@ -330,7 +330,12 @@ const ClientPortal: React.FC = () => {
         const estado = globalConfig.estado_portal || 'automatico';
         if (estado === 'cerrado' || globalConfig.portal_fuera_servicio === true) {
           outOfService = true;
-        } else {
+        } else if (estado === 'automatico') {
+          const hour = new Date().getHours();
+          if (hour < 6 || hour >= 18) {
+            outOfService = true;
+          }
+        } else if (estado === 'abierto') {
           outOfService = false;
         }
         setPortalFueraDeServicio(outOfService);
