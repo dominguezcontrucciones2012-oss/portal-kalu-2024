@@ -22,12 +22,6 @@ const Layout: React.FC = () => {
   return (
     <div 
       className="flex h-screen w-full bg-[#0f172a] text-slate-100 overflow-hidden font-sans"
-      style={isStandalonePage ? {
-        backgroundImage: "linear-gradient(rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.95)), url('/logo.png')",
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundAttachment: 'fixed'
-      } : {}}
     >
       {showSidebar && <Sidebar userRole={userRole} />}
       

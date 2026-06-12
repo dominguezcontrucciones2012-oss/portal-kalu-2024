@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { 
   Smartphone, 
   ShieldCheck, 
@@ -72,6 +72,67 @@ const ClientPortal: React.FC = () => {
   const [referenciaPago, setReferenciaPago] = useState('');
   const [captureBase64, setCaptureBase64] = useState<string | null>(null);
   const [cargandoCapture, setCargandoCapture] = useState(false);
+
+  // Floating Cart Drag Logic
+  const cartRef = useRef<HTMLButtonElement>(null);
+  const [cartPos, setCartPos] = useState({ x: 0, y: 0 });
+  const [isDraggingCart, setIsDraggingCart] = useState(false);
+  const dragState = useRef({ startX: 0, startY: 0, initialX: 0, initialY: 0, isDragging: false, hasMoved: false });
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const el = cartRef.current;
+    if (!el) return;
+    
+    e.preventDefault();
+    el.setPointerCapture(e.pointerId);
+    
+    dragState.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialX: cartPos.x,
+      initialY: cartPos.y,
+      isDragging: true,
+      hasMoved: false,
+    };
+    setIsDraggingCart(true);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!dragState.current.isDragging) return;
+    
+    const dx = e.clientX - dragState.current.startX;
+    const dy = e.clientY - dragState.current.startY;
+    
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      dragState.current.hasMoved = true;
+    }
+
+    setCartPos({
+      x: dragState.current.initialX + dx,
+      y: dragState.current.initialY + dy,
+    });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (!dragState.current.isDragging) return;
+    dragState.current.isDragging = false;
+    setIsDraggingCart(false);
+    
+    const el = cartRef.current;
+    if (el) {
+      el.releasePointerCapture(e.pointerId);
+    }
+  };
+
+  const handleCartClick = (e: React.MouseEvent) => {
+    if (dragState.current.hasMoved) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    setShowCartDrawer(true);
+  };
 
   // Estados para Reportar Pago de Deuda (Abono)
   const [showReportarPagoModal, setShowReportarPagoModal] = useState(false);
@@ -268,35 +329,23 @@ const ClientPortal: React.FC = () => {
                  allClients.find(c => c.id === user.id) || 
                  allClients.find(c => c.cedula === user.cedula);
       if (me) {
-        setClientData(prev => {
-          if (JSON.stringify(prev) === JSON.stringify(me)) return prev;
-          return me as Client;
-        });
+        setClientData(me as Client);
       }
     });
 
     // Suscribirse a las ventas de este cliente
+    const clientIds = [user.clientId, user.id].filter(Boolean);
     const unsubSales = subscribeToCollection('sales', (allSales) => {
-      const filtered = allSales.filter(s => 
-        s.cliente_id === user.clientId || 
-        s.cliente_id === user.id || 
-        s.cliente_id === clientData?.id
-      );
+      const filtered = allSales.filter(s => clientIds.includes(s.cliente_id));
       // Ordenar por fecha descendente
       const sorted = filtered.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
-      setMySales(prev => {
-        if (JSON.stringify(prev) === JSON.stringify(sorted)) return prev;
-        return sorted as Sale[];
-      });
+      setMySales(sorted as Sale[]);
       setLoading(false);
     });
 
     // Suscribirse a los productos
     const unsubProducts = subscribeToCollection('products', (data) => {
-      setProducts(prev => {
-        if (JSON.stringify(prev) === JSON.stringify(data)) return prev;
-        return data as Product[];
-      });
+      setProducts(data as Product[]);
     });
 
     // Suscribirse a los mensajes directos y globales del cliente
@@ -304,16 +353,12 @@ const ClientPortal: React.FC = () => {
       const myMsgs = allMensajes.filter(m => 
         m.cliente_id === user.clientId || 
         m.cliente_id === user.id || 
-        m.cliente_id === clientData?.id ||
         m.cliente_id === 'todos' ||
         m.cliente_id === 'global' ||
         !m.cliente_id
       );
       const sorted = myMsgs.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
-      setMensajes(prev => {
-        if (JSON.stringify(prev) === JSON.stringify(sorted)) return prev;
-        return sorted;
-      });
+      setMensajes(sorted);
     });
 
     // Suscribirse a configuracion para obtener cajero_activo y propaganda_url
@@ -330,13 +375,18 @@ const ClientPortal: React.FC = () => {
         const estado = globalConfig.estado_portal || 'automatico';
         if (estado === 'cerrado' || globalConfig.portal_fuera_servicio === true) {
           outOfService = true;
-        } else if (estado === 'automatico') {
-          const hour = new Date().getHours();
-          if (hour < 6 || hour >= 18) {
-            outOfService = true;
-          }
         } else if (estado === 'abierto') {
           outOfService = false;
+        } else {
+          // Modo automático: Cerrado hasta el martes 16 a las 6:00 AM
+          const now = new Date();
+          const reopenDate = new Date(2026, 5, 16, 6, 0, 0); // Mes 5 = Junio
+          if (now < reopenDate) {
+            outOfService = true;
+          } else {
+            const hour = now.getHours();
+            outOfService = (hour < 6 || hour >= 18);
+          }
         }
         setPortalFueraDeServicio(outOfService);
       }
@@ -375,7 +425,7 @@ const ClientPortal: React.FC = () => {
       unsubConfig();
       unsubTasa();
     };
-  }, [user, clientData?.id]);
+  }, [user]);
 
   // Guardar cambios en el carrito
   useEffect(() => {
@@ -417,10 +467,10 @@ const ClientPortal: React.FC = () => {
         </div>
         <h1 className="text-4xl font-black mb-4">PORTAL CERRADO</h1>
         <p className="text-gray-400 max-w-md text-lg">
-          Nuestro portal de clientes se encuentra temporalmente fuera de servicio.
+          Nuestro portal de clientes se encuentra cerrado por mantenimiento y mejoras.
         </p>
         <p className="text-[#3498db] font-bold mt-2">
-          El horario de atención es de 6:00 AM a 6:00 PM.
+          Estaremos de vuelta el martes 16 a las 6:00 AM.
         </p>
         <button 
           onClick={handleLogout}
@@ -462,6 +512,10 @@ const ClientPortal: React.FC = () => {
     });
   };
 
+  const removeItemCompletely = (productId: string) => {
+    setCart(prev => prev.filter(item => item.product.id !== productId));
+  };
+
   const getQuantityInCart = (productId: string) => {
     return cart.find(item => item.product.id === productId)?.cantidad || 0;
   };
@@ -475,6 +529,7 @@ const ClientPortal: React.FC = () => {
 
   // Confirmar y procesar pedido
   const handleConfirmOrder = async () => {
+    
     if (cart.length === 0 || placingOrder) return;
     
     if (metodoPago === 'inmediato' && !referenciaPago.trim()) {
@@ -588,13 +643,13 @@ Estatus: Pendiente por verificar/entregar
   };
 
   // Filtros de categoría y búsqueda
-  const categories = ['TODOS', ...Array.from(new Set(products.map(p => p.categoria.trim().toUpperCase())))];
+  const categories = ['TODOS', ...Array.from(new Set(products.map(p => (p.categoria || 'GENERAL').trim().toUpperCase())))];
   
   const filteredProducts = products.filter(product => {
-    const matchesSearch = product.nombre.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          product.codigo.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (product.nombre || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          (product.codigo || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = selectedCategory === 'TODOS' || 
-                            product.categoria.trim().toUpperCase() === selectedCategory;
+                            (product.categoria || 'GENERAL').trim().toUpperCase() === selectedCategory;
     return matchesSearch && matchesCategory;
   });
 
@@ -752,19 +807,43 @@ Estatus: Pendiente por verificar/entregar
           )}
 
           {/* Banner de Propaganda / Video Promocional */}
-          <div className="bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-white/10 rounded-[2rem] p-6 text-white flex flex-col sm:flex-row items-center justify-between gap-4 relative overflow-hidden backdrop-blur-md">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
-            <div className="space-y-1 text-center sm:text-left">
-              <span className="text-[9px] font-black uppercase text-purple-300 tracking-widest bg-purple-500/25 px-2 py-0.5 rounded-full inline-block">Novedades Kalu</span>
-              <h3 className="text-base font-black uppercase tracking-tight">¡Mira nuestra propaganda comercial!</h3>
-              <p className="text-xs text-gray-400 font-bold">Conece más sobre nuestros productos lácteos, repuestos y ferretería.</p>
+          <div 
+            onClick={() => setShowPropagandaModal(true)}
+            className="group relative w-full aspect-[16/9] sm:aspect-[21/9] bg-slate-900 rounded-[2rem] overflow-hidden cursor-pointer border border-white/10 shadow-2xl"
+          >
+            {/* Video Thumbnail (solo primera toma) */}
+            <video 
+              src={propagandaVideoUrl ? (propagandaVideoUrl.includes('#t=') ? propagandaVideoUrl : `${propagandaVideoUrl}#t=0.001`) : ''}
+              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 opacity-80"
+              muted
+              playsInline
+              preload="metadata"
+            />
+            
+            {/* Overlay Degradado para legibilidad */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent pointer-events-none" />
+            
+            {/* Contenido y Botón de Play */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
+              <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border border-white/30 text-white mb-4 group-hover:scale-110 group-hover:bg-white/30 transition-all duration-300 shadow-[0_0_30px_rgba(255,255,255,0.2)]">
+                <Play size={32} fill="currentColor" className="ml-1 drop-shadow-lg" />
+              </div>
             </div>
-            <button 
-              onClick={() => setShowPropagandaModal(true)}
-              className="bg-white hover:bg-gray-100 text-black px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-widest flex items-center gap-2 active:scale-95 transition-transform shrink-0 shadow-lg shadow-white/5 font-sans"
-            >
-              <Play size={14} fill="currentColor" /> Reproducir Video
-            </button>
+
+            {/* Textos inferiores */}
+            <div className="absolute bottom-6 left-6 right-6 flex flex-col sm:flex-row items-start sm:items-end justify-between gap-2">
+              <div className="text-left">
+                <span className="text-[10px] font-black uppercase text-purple-300 tracking-[0.2em] bg-purple-500/30 px-3 py-1 rounded-full backdrop-blur-md border border-purple-500/30 mb-2 inline-block">
+                  Novedades Kalu
+                </span>
+                <h3 className="text-xl font-black text-white uppercase tracking-tight drop-shadow-lg leading-tight">
+                  Propaganda Comercial
+                </h3>
+              </div>
+              <span className="text-[10px] text-white/70 font-bold uppercase tracking-wider hidden sm:block">
+                Toca para reproducir
+              </span>
+            </div>
           </div>
 
           {/* Sección de Mensajes y Avisos */}
@@ -921,7 +1000,12 @@ Estatus: Pendiente por verificar/entregar
               return (
                 <div 
                   key={product.id} 
-                  className="bg-white/5 border border-white/10 rounded-3xl p-4 flex flex-col justify-between hover:bg-white/10 hover:border-white/20 transition-all group text-white"
+                  className={cn(
+                    "rounded-[2.5rem] p-5 flex flex-col justify-between transition-all duration-300 group shadow-lg border",
+                    qty > 0 
+                      ? "bg-[#3498db]/20 border-[#3498db]/40 shadow-[#3498db]/10 scale-[1.02]" 
+                      : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20"
+                  )}
                 >
                   <div className="flex gap-4">
                     <div className="w-24 h-24 rounded-2xl overflow-hidden bg-black/40 relative shrink-0">
@@ -1001,24 +1085,38 @@ Estatus: Pendiente por verificar/entregar
             })}
           </div>
 
-          {/* Botón flotante de carrito dentro del Portal */}
-          {cartTotalItems > 0 && (
-            <button 
-              onClick={() => setShowCartDrawer(true)}
-              className="fixed bottom-6 right-6 bg-[#2ecc71] hover:bg-[#27ae60] text-white px-6 py-4 rounded-[2rem] shadow-2xl flex items-center gap-3 active:scale-95 transition-all z-40 border border-emerald-400/20"
-            >
-              <div className="relative">
-                <ShoppingCart size={20} fill="white" />
+          {/* Botón flotante de carrito siempre visible y movible */}
+          <button 
+            ref={cartRef}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            onClick={handleCartClick}
+            style={{ transform: `translate(${cartPos.x}px, ${cartPos.y}px)`, touchAction: 'none' }}
+            className={cn(
+              "fixed bottom-6 right-6 bg-[#2ecc71] hover:bg-[#27ae60] text-white px-6 py-4 rounded-[2rem] shadow-2xl flex items-center gap-3 z-40 border border-emerald-400/20 touch-none select-none",
+              isDraggingCart ? "opacity-90 scale-105 shadow-emerald-500/50 cursor-grabbing" : "transition-all active:scale-95 cursor-grab"
+            )}
+          >
+            <div className="relative">
+              <ShoppingCart size={20} fill="white" />
+              {cartTotalItems > 0 && (
                 <span className="absolute -top-3 -right-3 w-5 h-5 rounded-full bg-red-500 border border-white flex items-center justify-center text-[9px] font-black leading-none">
                   {cartTotalItems}
                 </span>
-              </div>
-              <span className="text-xs font-black uppercase tracking-widest hidden sm:inline">Ver Carrito</span>
-              <span className="text-sm font-black bg-black/20 px-3 py-1 rounded-xl">
+              )}
+            </div>
+            <span className="text-xs font-black uppercase tracking-widest hidden sm:inline">Ver Carrito</span>
+            <div className="flex flex-col items-end bg-black/20 px-3 py-1.5 rounded-xl">
+              <span className="text-sm font-black leading-none mb-1">
                 {formatCurrency(cartTotalUsd)}
               </span>
-            </button>
-          )}
+              <span className="text-[10px] text-emerald-200 font-bold leading-none">
+                {formatCurrency(cartTotalUsd, 'Bs', tasaBcv).replace('VES', 'Bs.')}
+              </span>
+            </div>
+          </button>
         </div>
       )}
 
@@ -1144,7 +1242,13 @@ Estatus: Pendiente por verificar/entregar
               {cart.map(item => {
                 const itemPrice = item.product.precio_oferta_usd || item.product.precio_normal_usd;
                 return (
-                  <div key={item.product.id} className="flex items-center justify-between bg-white/5 border border-white/10 p-4 rounded-3xl gap-4">
+                  <div key={item.product.id} className="relative flex items-center justify-between bg-white/5 border border-white/10 p-4 rounded-3xl gap-4 mt-2">
+                    <button 
+                      onClick={() => removeItemCompletely(item.product.id)}
+                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center shadow-lg shadow-red-500/20 hover:bg-red-600 active:scale-95 z-10"
+                    >
+                      <X size={12} />
+                    </button>
                     <div className="flex items-center gap-4 min-w-0">
                       <div className="w-12 h-12 rounded-xl overflow-hidden bg-black/40 shrink-0">
                         {item.product.imagen_url ? (
@@ -1528,9 +1632,11 @@ Estatus: Pendiente por verificar/entregar
           {/* Contenedor del Video */}
           <div className="w-full h-full flex items-center justify-center relative">
             <video 
-              src={propagandaVideoUrl} 
+              src={propagandaVideoUrl ? (propagandaVideoUrl.includes('#t=') ? propagandaVideoUrl : `${propagandaVideoUrl}#t=0.001`) : ''} 
               controls 
               autoPlay 
+              playsInline
+              preload="metadata"
               className="w-full h-full object-contain max-h-screen"
             />
           </div>

@@ -68,12 +68,12 @@ const PublicMarketScreen: React.FC = () => {
     });
   }, []);
 
-  const categories = ['Todas', ...new Set(products.map(p => p.categoria))];
+  const categories = ['Todas', ...new Set(products.map(p => p.categoria || 'General'))];
 
   const filteredProducts = products.filter(p => {
-    const matchesSearch = p.nombre.toLowerCase().includes(search.toLowerCase()) || 
-                         p.categoria.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = selectedCategory === 'Todas' || p.categoria === selectedCategory;
+    const matchesSearch = (p.nombre || '').toLowerCase().includes(search.toLowerCase()) || 
+                         (p.categoria || '').toLowerCase().includes(search.toLowerCase());
+    const matchesCategory = selectedCategory === 'Todas' || (p.categoria || 'General') === selectedCategory;
     return matchesSearch && matchesCategory;
   });
 

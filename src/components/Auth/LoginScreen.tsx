@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { auth, signInWithPopupCustom, signInWithPinCustom, isMock } from '../../lib/firebase';
 import { GoogleAuthProvider } from 'firebase/auth';
 import { useAuth } from '../../contexts/AuthProvider';
-import { createClient, checkPinUnique } from '../../lib/dbUtils';
+import { createClient } from '../../lib/dbUtils';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 import { LogIn, Rocket, Shield, Info, KeyRound, UserPlus, ArrowLeft, ShoppingBag } from 'lucide-react';
@@ -102,12 +102,7 @@ const LoginScreen: React.FC = () => {
     setError(null);
 
     try {
-      const isUnique = await checkPinUnique(regPin);
-      if (!isUnique) {
-        setError('Este PIN ya está en uso. Por favor elija un código de 4 números diferente.');
-        setLoading(false);
-        return;
-      }
+      // El sistema ahora permite repetir PIN porque la llave primaria de acceso es (Cédula + PIN)
 
       const clientData = {
         nombre: regNombre,

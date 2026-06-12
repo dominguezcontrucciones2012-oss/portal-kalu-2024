@@ -22,6 +22,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
     categoria: initialData?.categoria || '',
     costo_usd: initialData?.costo_usd?.toString() || '',
     precio_normal_usd: initialData?.precio_normal_usd?.toString() || '',
+    margen_ganancia: initialData?.margen_ganancia?.toString() || '',
     stock: initialData?.stock?.toString() || '',
     stock_minimo: initialData?.stock_minimo?.toString() || '',
     unidad_medida: initialData?.unidad_medida || 'UNIDAD',
@@ -35,6 +36,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
         categoria: initialData?.categoria || '',
         costo_usd: initialData?.costo_usd?.toString() || '',
         precio_normal_usd: initialData?.precio_normal_usd?.toString() || '',
+        margen_ganancia: initialData?.margen_ganancia?.toString() || '',
         stock: initialData?.stock?.toString() || '',
         stock_minimo: initialData?.stock_minimo?.toString() || '',
         unidad_medida: initialData?.unidad_medida || 'UNIDAD',
@@ -51,7 +53,22 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
   if (!isOpen) return null;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    
+    setFormData(prev => {
+      const nextState = { ...prev, [name]: value };
+      
+      // Auto-calcular el precio de venta si se cambia el costo o el margen
+      if (name === 'costo_usd' || name === 'margen_ganancia') {
+        const cost = Number(name === 'costo_usd' ? value : prev.costo_usd) || 0;
+        const margin = Number(name === 'margen_ganancia' ? value : prev.margen_ganancia) || 0;
+        if (cost > 0 && margin >= 0) {
+          nextState.precio_normal_usd = (cost + (cost * margin / 100)).toFixed(2);
+        }
+      }
+      
+      return nextState;
+    });
   };
 
   const uploadImage = async (file: File, path: string): Promise<string> => {
@@ -110,6 +127,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
         categoria: formData.categoria || 'GENERAL',
         costo_usd: Number(formData.costo_usd),
         precio_normal_usd: Number(formData.precio_normal_usd),
+        margen_ganancia: Number(formData.margen_ganancia) || 0,
         stock: Number(formData.stock),
         stock_minimo: Number(formData.stock_minimo),
         unidad_medida: formData.unidad_medida,
@@ -125,7 +143,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
       
       // Limpiar y cerrar
       setFormData({
-        codigo: '', nombre: '', categoria: '', costo_usd: '', precio_normal_usd: '', stock: '', stock_minimo: '', unidad_medida: 'UNIDAD'
+        codigo: '', nombre: '', categoria: '', costo_usd: '', precio_normal_usd: '', margen_ganancia: '', stock: '', stock_minimo: '', unidad_medida: 'UNIDAD'
       });
       setImage1(null);
       setImage2(null);
@@ -226,6 +244,19 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
                 onChange={handleChange}
                 className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#3498db] transition-colors"
                 placeholder="0.00"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Margen Ganancia (%)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                name="margen_ganancia"
+                value={formData.margen_ganancia}
+                onChange={handleChange}
+                className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#3498db] transition-colors"
+                placeholder="0"
               />
             </div>
             <div className="space-y-2">

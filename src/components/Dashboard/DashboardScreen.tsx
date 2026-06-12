@@ -306,38 +306,57 @@ const DashboardScreen: React.FC = () => {
     }
   };
 
-  const handleVideoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleVideoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 20 * 1024 * 1024) {
+        alert("El video es demasiado pesado. Por favor sube un video de máximo 20MB.");
+        return;
+      }
+      
       setCargandoVideoLocal(true);
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        try {
-          const base64 = reader.result as string;
-          const res = await fetch('/api/upload-video', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ file: base64, filename: file.name })
-          });
-          if (res.ok) {
-            const data = await res.json();
-            setPropagandaUrl(data.url);
+      
+      try {
+        const { ref, uploadBytesResumable, getDownloadURL } = await import('firebase/storage');
+        const { storage } = await import('../../lib/firebase');
+        
+        if (!storage || !storage.app) {
+          alert("El almacenamiento en la nube no está disponible (modo local/mock). Pega un enlace directo en su lugar.");
+          setCargandoVideoLocal(false);
+          return;
+        }
+
+        const fileExt = file.name.split('.').pop() || 'mp4';
+        const fileName = `propaganda_${Date.now()}.${fileExt}`;
+        const storageRef = ref(storage, `videos/${fileName}`);
+        
+        const uploadTask = uploadBytesResumable(storageRef, file);
+        
+        uploadTask.on('state_changed', 
+          (snapshot) => {
+            // Se puede agregar progreso aquí si se desea
+          }, 
+          (error) => {
+            console.error("Error al subir video:", error);
+            alert("Error al subir el video a la nube. Revisa tu conexión.");
+            setCargandoVideoLocal(false);
+          }, 
+          async () => {
+            const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+            setPropagandaUrl(downloadURL);
             
             // Guardar automáticamente en la configuración de la base de datos
             const { updateDocument } = await import('../../lib/dbUtils');
-            await updateDocument('configuracion', 'global', { propaganda_url: data.url });
-            alert("Video de propaganda comercial subido y guardado exitosamente en el servidor.");
-          } else {
-            alert("Error al subir el video al servidor. Por favor, asegúrate de que sea un archivo de video válido y que no supere el tamaño permitido.");
+            await updateDocument('configuracion', 'global', { propaganda_url: downloadURL });
+            alert("Video comercial subido y guardado exitosamente en la nube.");
+            setCargandoVideoLocal(false);
           }
-        } catch (err) {
-          console.error("Error al subir video:", err);
-          alert("Error de red al subir el video.");
-        } finally {
-          setCargandoVideoLocal(false);
-        }
-      };
-      reader.readAsDataURL(file);
+        );
+      } catch (err) {
+        console.error("Error iniciando subida de video:", err);
+        alert("Error al iniciar la subida del video.");
+        setCargandoVideoLocal(false);
+      }
     }
   };
 

@@ -7,6 +7,13 @@
     <meta name="description" content="Gestión profesional de inventario, ventas y clientes." />
     <link rel="icon" type="image/svg+xml" href="https://api.dicebear.com/7.x/initials/svg?seed=KN" />
     <link rel="manifest" href="/manifest.json" />
+    <!-- Preconexiones para Firebase (reduce 300-500ms en móvil) -->
+    <link rel="preconnect" href="https://firestore.googleapis.com" />
+    <link rel="preconnect" href="https://firebase.googleapis.com" />
+    <link rel="preconnect" href="https://identitytoolkit.googleapis.com" />
+    <link rel="dns-prefetch" href="https://firestore.googleapis.com" />
+    <!-- Precargar el logo para que esté listo al instante -->
+    <link rel="preload" href="/logo.png" as="image" />
   </head>
   <body>
     <div id="root"></div>
@@ -19,7 +26,25 @@
 
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').catch(err => {
+          navigator.serviceWorker.register('/sw.js').then(reg => {
+            // Verificar actualizaciones periódicamente (cada 60 seg)
+            setInterval(() => reg.update(), 60000);
+
+            // Cuando hay una actualización disponible, instalarla en segundo plano
+            reg.addEventListener('updatefound', () => {
+              const newWorker = reg.installing;
+              if (newWorker) {
+                newWorker.addEventListener('statechange', () => {
+                  // Solo recargar si el usuario ya tenía una versión instalada previamente
+                  // (no en la primera instalación)
+                  if (newWorker.state === 'activated' && reg.active) {
+                    // Esperar 1 segundo para que el SW termine de instalarse
+                    setTimeout(() => window.location.reload(), 1000);
+                  }
+                });
+              }
+            });
+          }).catch(err => {
             console.log('ServiceWorker registration failed: ', err);
           });
         });
@@ -27,5 +52,4 @@
     </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
-</html>
 

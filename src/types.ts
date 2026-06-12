@@ -25,6 +25,7 @@ export interface Product {
   costo_usd: number;
   precio_normal_usd: number;
   precio_oferta_usd?: number;
+  margen_ganancia?: number;
   stock: number;
   stock_minimo: number;
   unidad_medida: string;

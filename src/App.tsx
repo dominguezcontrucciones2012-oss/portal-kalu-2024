@@ -110,13 +110,7 @@ const Root = () => {
   );
 };
 
-import { autoCancelExpiredOrders } from './lib/dbUtils';
-
 export default function App() {
-  React.useEffect(() => {
-    autoCancelExpiredOrders();
-  }, []);
-
   return (
     <BrowserRouter>
       <AuthProvider>

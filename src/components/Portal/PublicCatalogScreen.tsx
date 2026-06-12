@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   ShoppingBag, 
@@ -26,7 +26,6 @@ import {
   updateStock,
   updateDocument,
   createSale,
-  checkPinUnique,
   addDocument
 } from '../../lib/dbUtils';
 import { signInWithPinCustom, db, isMock } from '../../lib/firebase';
@@ -106,6 +105,67 @@ const PublicCatalogScreen: React.FC = () => {
   // Formulario de Login
   const [loginPin, setLoginPin] = useState('');
 
+  // Floating Cart Drag Logic
+  const cartRef = useRef<HTMLButtonElement>(null);
+  const [cartPos, setCartPos] = useState({ x: 0, y: 0 });
+  const [isDraggingCart, setIsDraggingCart] = useState(false);
+  const dragState = useRef({ startX: 0, startY: 0, initialX: 0, initialY: 0, isDragging: false, hasMoved: false });
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const el = cartRef.current;
+    if (!el) return;
+    
+    e.preventDefault();
+    el.setPointerCapture(e.pointerId);
+    
+    dragState.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialX: cartPos.x,
+      initialY: cartPos.y,
+      isDragging: true,
+      hasMoved: false,
+    };
+    setIsDraggingCart(true);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!dragState.current.isDragging) return;
+    
+    const dx = e.clientX - dragState.current.startX;
+    const dy = e.clientY - dragState.current.startY;
+    
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      dragState.current.hasMoved = true;
+    }
+
+    setCartPos({
+      x: dragState.current.initialX + dx,
+      y: dragState.current.initialY + dy,
+    });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (!dragState.current.isDragging) return;
+    dragState.current.isDragging = false;
+    setIsDraggingCart(false);
+    
+    const el = cartRef.current;
+    if (el) {
+      el.releasePointerCapture(e.pointerId);
+    }
+  };
+
+  const handleCartClick = (e: React.MouseEvent) => {
+    if (dragState.current.hasMoved) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    setShowCartDrawer(true);
+  };
+
   // Cargar productos y tasa BCV
   useEffect(() => {
     const unsub = subscribeToCollection('products', (data) => {
@@ -135,13 +195,18 @@ const PublicCatalogScreen: React.FC = () => {
 
       if (estado === 'cerrado' || globalConfig?.portal_fuera_servicio === true) {
         outOfService = true;
-      } else if (estado === 'automatico') {
-        const hour = new Date().getHours();
-        if (hour < 6 || hour >= 18) {
-          outOfService = true;
-        }
       } else if (estado === 'abierto') {
         outOfService = false;
+      } else {
+        // Modo automático: Cerrado hasta el martes 16 a las 6:00 AM
+        const now = new Date();
+        const reopenDate = new Date(2026, 5, 16, 6, 0, 0); // Mes 5 = Junio
+        if (now < reopenDate) {
+          outOfService = true;
+        } else {
+          const hour = now.getHours();
+          outOfService = (hour < 6 || hour >= 18);
+        }
       }
       
       setPortalFueraDeServicio(outOfService);
@@ -170,13 +235,13 @@ const PublicCatalogScreen: React.FC = () => {
   }, [cart]);
 
   // Filtro de categorías y búsqueda
-  const categories = ['TODOS', ...Array.from(new Set(products.map(p => p.categoria.trim().toUpperCase())))];
+  const categories = ['TODOS', ...Array.from(new Set(products.map(p => (p.categoria || 'GENERAL').trim().toUpperCase())))];
 
   const filteredProducts = products.filter(product => {
-    const matchesSearch = product.nombre.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          product.codigo.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (product.nombre || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          (product.codigo || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = selectedCategory === 'TODOS' || 
-                            product.categoria.trim().toUpperCase() === selectedCategory;
+                            (product.categoria || 'GENERAL').trim().toUpperCase() === selectedCategory;
     return matchesSearch && matchesCategory;
   });
 
@@ -207,6 +272,10 @@ const PublicCatalogScreen: React.FC = () => {
       }
       return prev.filter(item => item.product.id !== productId);
     });
+  };
+
+  const removeItemCompletely = (productId: string) => {
+    setCart(prev => prev.filter(item => item.product.id !== productId));
   };
 
   const getQuantityInCart = (productId: string) => {
@@ -240,12 +309,7 @@ const PublicCatalogScreen: React.FC = () => {
     setAuthError(null);
 
     try {
-      const isUnique = await checkPinUnique(regPin);
-      if (!isUnique) {
-        setAuthError('Este PIN ya está en uso. Por favor elija un código de 4 números diferente.');
-        setAuthLoading(false);
-        return;
-      }
+      // El sistema ahora permite repetir PIN porque la llave primaria de acceso es (Cédula + PIN)
 
       const clientData = {
         nombre: regNombre,
@@ -308,6 +372,7 @@ const PublicCatalogScreen: React.FC = () => {
 
   // Confirmar y procesar pedido para clientes ya autenticados
   const handleConfirmOrder = async () => {
+    
     if (cart.length === 0 || placingOrder || !user) return;
     setPlacingOrder(true);
     setAuthError(null);
@@ -481,10 +546,10 @@ Estatus: Pendiente por verificar/entregar
         </div>
         <h1 className="text-4xl font-black mb-4">PORTAL CERRADO</h1>
         <p className="text-gray-400 max-w-md text-lg">
-          Nuestro portal de compras se encuentra temporalmente fuera de servicio.
+          Nuestro portal de compras se encuentra cerrado por mantenimiento y mejoras.
         </p>
         <p className="text-[#3498db] font-bold mt-2">
-          El horario de atención es de 6:00 AM a 6:00 PM.
+          Estaremos de vuelta el martes 16 a las 6:00 AM.
         </p>
         <button 
           onClick={() => window.location.reload()}
@@ -682,7 +747,12 @@ Estatus: Pendiente por verificar/entregar
               return (
                 <div 
                   key={product.id} 
-                  className="bg-white/5 border border-white/10 rounded-[2.5rem] p-5 flex flex-col justify-between hover:bg-white/10 hover:border-white/20 transition-all duration-300 group shadow-lg"
+                  className={cn(
+                    "rounded-[2.5rem] p-5 flex flex-col justify-between transition-all duration-300 group shadow-lg border",
+                    qty > 0 
+                      ? "bg-[#3498db]/20 border-[#3498db]/40 shadow-[#3498db]/10 scale-[1.02]" 
+                      : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20"
+                  )}
                 >
                   <div className="space-y-4">
                     <div className="h-48 rounded-[2rem] overflow-hidden bg-black/30 relative">
@@ -784,24 +854,38 @@ Estatus: Pendiente por verificar/entregar
         )}
       </div>
 
-      {/* Floating Cart Button */}
-      {cartTotalItems > 0 && (
-        <button 
-          onClick={() => setShowCartDrawer(true)}
-          className="fixed bottom-6 right-6 bg-[#2ecc71] hover:bg-[#27ae60] text-white px-6 py-4 rounded-[2rem] shadow-2xl flex items-center gap-3 active:scale-95 transition-all z-40 border border-emerald-400/20 group"
-        >
-          <div className="relative">
-            <ShoppingCart size={22} fill="white" />
+      {/* Botón flotante de carrito siempre visible y movible */}
+      <button 
+        ref={cartRef}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onClick={handleCartClick}
+        style={{ transform: `translate(${cartPos.x}px, ${cartPos.y}px)`, touchAction: 'none' }}
+        className={cn(
+          "fixed bottom-6 right-6 bg-[#2ecc71] hover:bg-[#27ae60] text-white px-6 py-4 rounded-[2rem] shadow-2xl flex items-center gap-3 z-40 border border-emerald-400/20 touch-none select-none",
+          isDraggingCart ? "opacity-90 scale-105 shadow-emerald-500/50 cursor-grabbing" : "transition-all active:scale-95 cursor-grab"
+        )}
+      >
+        <div className="relative">
+          <ShoppingCart size={20} fill="white" />
+          {cartTotalItems > 0 && (
             <span className="absolute -top-3 -right-3 w-5 h-5 rounded-full bg-red-500 border border-white flex items-center justify-center text-[9px] font-black leading-none">
               {cartTotalItems}
             </span>
-          </div>
-          <span className="text-xs font-black uppercase tracking-widest hidden sm:inline">Ver Carrito</span>
-          <span className="text-sm font-black bg-black/20 px-3 py-1 rounded-xl">
+          )}
+        </div>
+        <span className="text-xs font-black uppercase tracking-widest hidden sm:inline">Ver Carrito</span>
+        <div className="flex flex-col items-end bg-black/20 px-3 py-1.5 rounded-xl">
+          <span className="text-sm font-black leading-none mb-1">
             {formatCurrency(cartTotalUsd)}
           </span>
-        </button>
-      )}
+          <span className="text-[10px] text-emerald-200 font-bold leading-none">
+            {formatCurrency(cartTotalUsd, 'Bs', tasaBcv).replace('VES', 'Bs.')}
+          </span>
+        </div>
+      </button>
 
       {/* Shopping Cart Drawer Modal */}
       {showCartDrawer && (
@@ -834,7 +918,13 @@ Estatus: Pendiente por verificar/entregar
               {cart.map(item => {
                 const itemPrice = item.product.precio_oferta_usd || item.product.precio_normal_usd;
                 return (
-                  <div key={item.product.id} className="flex items-center justify-between bg-white/5 border border-white/10 p-4 rounded-3xl gap-4">
+                  <div key={item.product.id} className="relative flex items-center justify-between bg-white/5 border border-white/10 p-4 rounded-3xl gap-4 mt-2">
+                    <button 
+                      onClick={() => removeItemCompletely(item.product.id)}
+                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center shadow-lg shadow-red-500/20 hover:bg-red-600 active:scale-95 z-10"
+                    >
+                      <X size={12} />
+                    </button>
                     <div className="flex items-center gap-4 min-w-0">
                       <div className="w-12 h-12 rounded-xl overflow-hidden bg-black/40 shrink-0">
                         {item.product.imagen_url ? (

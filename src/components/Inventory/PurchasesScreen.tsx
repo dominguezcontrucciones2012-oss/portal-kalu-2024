@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   ShoppingBag, 
   Search, 
@@ -10,32 +10,41 @@ import {
   Save,
   Loader2
 } from 'lucide-react';
-import { cn, formatCurrency } from '../../lib/utils';
+import { cn, formatCurrency, compressImage } from '../../lib/utils';
 import { scanInvoiceIA } from '../../services/geminiService';
 
 const PurchasesScreen: React.FC = () => {
   const [items, setItems] = useState<any[]>([]);
   const [scanning, setScanning] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleScanInvoice = async () => {
+  const handleScanInvoice = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
     setScanning(true);
-    // Simulated base64 for demo purposes, in real world we use a file input
-    setTimeout(async () => {
-      try {
-        const result = [
-          { nombre: "HARINA PAN 1KG", cantidad: 20, costo: 1.10 },
-          { nombre: "AZUCAR MONTAÑA 1KG", cantidad: 10, costo: 0.95 },
-          { nombre: "ARROZ PRIMA 1KG", cantidad: 15, costo: 1.05 }
-        ];
-        // En una app real aqui llamaríamos a la IA de verdad pasándole la imagen
-        // const result = await scanInvoiceIA(base64Image);
-        setItems([...items, ...result]);
-      } catch (err) {
-        console.error("Error escaneando", err);
-      } finally {
-        setScanning(false);
+    try {
+      const compressedBase64 = await compressImage(file, 800);
+      const result = await scanInvoiceIA(compressedBase64);
+      
+      if (Array.isArray(result) && result.length > 0) {
+        setItems(prev => [...prev, ...result]);
+      } else {
+        alert("La IA no pudo encontrar productos en esta imagen. Intenta con una foto más clara.");
       }
-    }, 2000);
+    } catch (err) {
+      console.error("Error escaneando", err);
+      alert("Error de conexión con la IA.");
+    } finally {
+      setScanning(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const triggerFileInput = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
   };
 
   const removeItem = (idx: number) => {
@@ -47,7 +56,19 @@ const PurchasesScreen: React.FC = () => {
     if (!nombre) return;
     const cant = prompt("Cantidad comprada:");
     const costo = prompt("Costo unitario (USD):");
-    setItems([...items, { nombre: nombre.toUpperCase(), cantidad: Number(cant) || 1, costo: Number(costo) || 0 }]);
+    const margen = prompt("Margen Ganancia (%):") || "0";
+    
+    const costNum = Number(costo) || 0;
+    const marginNum = Number(margen) || 0;
+    const pv = costNum + (costNum * marginNum / 100);
+
+    setItems([...items, { 
+      nombre: nombre.toUpperCase(), 
+      cantidad: Number(cant) || 1, 
+      costo: costNum,
+      margen: marginNum,
+      precio_venta: pv
+    }]);
   };
 
   const handleSavePurchase = () => {
@@ -68,8 +89,15 @@ const PurchasesScreen: React.FC = () => {
           <p className="text-gray-400 text-sm">Incremento de stock y actualización de costos</p>
         </div>
         <div className="flex gap-3">
+          <input 
+            type="file" 
+            accept="image/*" 
+            ref={fileInputRef} 
+            className="hidden" 
+            onChange={handleScanInvoice} 
+          />
           <button 
-            onClick={handleScanInvoice}
+            onClick={triggerFileInput}
             disabled={scanning}
             className="bg-[#9b59b6] hover:bg-[#8e44ad] text-white font-black py-4 px-8 rounded-2xl shadow-xl shadow-purple-500/10 transition-all flex items-center gap-3 text-sm uppercase tracking-widest disabled:opacity-50"
           >
@@ -83,55 +111,92 @@ const PurchasesScreen: React.FC = () => {
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-white/5 border border-white/10 rounded-[2.5rem] overflow-hidden">
              <table className="w-full text-left">
-               <thead>
-                 <tr className="bg-white/5 text-[10px] font-black uppercase text-gray-500 tracking-widest">
-                   <th className="px-8 py-6">Producto</th>
-                   <th className="px-8 py-6 text-center">Cant.</th>
-                   <th className="px-8 py-6 text-center">Costo</th>
-                   <th className="px-8 py-6 text-right">Subtotal</th>
-                   <th className="px-8 py-6"></th>
-                 </tr>
-               </thead>
+                <thead>
+                  <tr className="bg-white/5 text-[10px] font-black uppercase text-gray-500 tracking-widest">
+                    <th className="px-6 py-6">Producto</th>
+                    <th className="px-4 py-6 text-center">Cant.</th>
+                    <th className="px-4 py-6 text-center">Costo</th>
+                    <th className="px-4 py-6 text-center">% Ganancia</th>
+                    <th className="px-4 py-6 text-center">Precio Venta</th>
+                    <th className="px-6 py-6 text-right">Subtotal</th>
+                    <th className="px-6 py-6"></th>
+                  </tr>
+                </thead>
                <tbody className="divide-y divide-white/5">
                  {items.length > 0 ? items.map((item, idx) => (
-                   <tr key={idx} className="hover:bg-white/5 transition-colors">
-                     <td className="px-8 py-6 font-bold text-white uppercase">{item.nombre}</td>
-                     <td className="px-8 py-6 text-center">
-                       <input 
-                         type="number" 
-                         value={item.cantidad} 
-                         className="w-16 bg-black/20 border border-white/10 rounded-lg text-center font-bold py-1"
-                         onChange={(e) => {
-                           const newItems = [...items];
-                           newItems[idx].cantidad = Number(e.target.value);
-                           setItems(newItems);
-                         }}
-                       />
-                     </td>
-                     <td className="px-8 py-6 text-center">
-                       <input 
-                         type="number" 
-                         value={item.costo} 
-                         className="w-20 bg-black/20 border border-white/10 rounded-lg text-center font-bold py-1"
-                         onChange={(e) => {
-                           const newItems = [...items];
-                           newItems[idx].costo = Number(e.target.value);
-                           setItems(newItems);
-                         }}
-                       />
-                     </td>
-                     <td className="px-8 py-6 text-right font-black text-[#2ecc71]">
-                       ${(item.cantidad * item.costo).toFixed(2)}
-                     </td>
-                     <td className="px-8 py-6 text-right">
-                       <button onClick={() => removeItem(idx)} className="text-gray-700 hover:text-red-400 transition-colors">
+                    <tr key={idx} className="hover:bg-white/5 transition-colors">
+                      <td className="px-6 py-6 font-bold text-white uppercase">{item.nombre}</td>
+                      <td className="px-4 py-6 text-center">
+                        <input 
+                          type="number" 
+                          value={item.cantidad} 
+                          className="w-16 bg-black/20 border border-white/10 rounded-lg text-center font-bold py-1"
+                          onChange={(e) => {
+                            const newItems = [...items];
+                            newItems[idx].cantidad = Number(e.target.value);
+                            setItems(newItems);
+                          }}
+                        />
+                      </td>
+                      <td className="px-4 py-6 text-center">
+                        <input 
+                          type="number" 
+                          value={item.costo} 
+                          className="w-20 bg-black/20 border border-white/10 rounded-lg text-center font-bold py-1"
+                          onChange={(e) => {
+                            const newItems = [...items];
+                            const c = Number(e.target.value);
+                            newItems[idx].costo = c;
+                            const m = newItems[idx].margen || 0;
+                            newItems[idx].precio_venta = c + (c * m / 100);
+                            setItems(newItems);
+                          }}
+                        />
+                      </td>
+                      <td className="px-4 py-6 text-center">
+                        <input 
+                          type="number" 
+                          value={item.margen || 0} 
+                          className="w-16 bg-black/20 border border-white/10 rounded-lg text-center font-bold py-1"
+                          onChange={(e) => {
+                            const newItems = [...items];
+                            const m = Number(e.target.value);
+                            newItems[idx].margen = m;
+                            const c = newItems[idx].costo || 0;
+                            newItems[idx].precio_venta = c + (c * m / 100);
+                            setItems(newItems);
+                          }}
+                        />
+                      </td>
+                      <td className="px-4 py-6 text-center">
+                        <input 
+                          type="number" 
+                          value={item.precio_venta || 0} 
+                          className="w-20 bg-black/20 border border-white/10 rounded-lg text-center font-bold py-1 text-[#3498db]"
+                          onChange={(e) => {
+                            const newItems = [...items];
+                            newItems[idx].precio_venta = Number(e.target.value);
+                            // Opcional: auto-calcular margen si se cambia el precio
+                            const c = newItems[idx].costo;
+                            if (c > 0) {
+                              newItems[idx].margen = ((newItems[idx].precio_venta - c) / c) * 100;
+                            }
+                            setItems(newItems);
+                          }}
+                        />
+                      </td>
+                      <td className="px-6 py-6 text-right font-black text-[#2ecc71]">
+                        ${(item.cantidad * item.costo).toFixed(2)}
+                      </td>
+                      <td className="px-6 py-6 text-right">
+                        <button onClick={() => removeItem(idx)} className="text-gray-700 hover:text-red-400 transition-colors">
                          <Trash2 size={18} />
                        </button>
                      </td>
                    </tr>
-                 )) : (
-                   <tr>
-                     <td colSpan={5} className="px-8 py-20 text-center">
+                  )) : (
+                    <tr>
+                      <td colSpan={7} className="px-8 py-20 text-center">
                        <div className="flex flex-col items-center gap-4 text-gray-600">
                          <FileText size={48} className="opacity-20" />
                          <span className="font-black uppercase tracking-widest">No hay items cargados</span>

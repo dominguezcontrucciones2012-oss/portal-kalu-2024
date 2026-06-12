@@ -58,10 +58,18 @@ export async function scanInvoiceIA(base64Image: string) {
     Asegúrate de que los nombres estén en MAYÚSCULAS y los números sean válidos.
   `;
 
+  let mimeType = "image/jpeg";
+  let base64Data = base64Image;
+
+  if (base64Image.startsWith('data:image')) {
+    mimeType = base64Image.substring(base64Image.indexOf(':') + 1, base64Image.indexOf(';'));
+    base64Data = base64Image.split(',')[1];
+  }
+
   const imagePart = {
     inlineData: {
-      mimeType: "image/jpeg",
-      data: base64Image,
+      mimeType: mimeType,
+      data: base64Data,
     },
   };
 

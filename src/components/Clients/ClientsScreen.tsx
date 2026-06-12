@@ -12,7 +12,7 @@ import {
   Save
 } from 'lucide-react';
 import { cn, formatCurrency } from '../../lib/utils';
-import { subscribeToCollection, createClient, getLatestTasa, checkPinUnique, updateDocument, resetClientPin } from '../../lib/dbUtils';
+import { subscribeToCollection, createClient, getLatestTasa, updateDocument, resetClientPin } from '../../lib/dbUtils';
 import { type Client } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
@@ -80,18 +80,7 @@ const ClientsScreen: React.FC = () => {
         pinToUse = pinToUse.padEnd(4, '0');
       }
       
-      let isUnique = await checkPinUnique(pinToUse);
-      if (!isUnique) {
-        let attempts = 0;
-        while (!isUnique && attempts < 100) {
-          const rand = Math.floor(1000 + Math.random() * 9000).toString();
-          isUnique = await checkPinUnique(rand);
-          if (isUnique) {
-            pinToUse = rand;
-          }
-          attempts++;
-        }
-      }
+      // El PIN ya no requiere ser único porque la llave de acceso es (Cédula + PIN)
 
       await createClient({ ...newClient, pin: pinToUse });
       setShowAddModal(false);
@@ -170,7 +159,8 @@ const ClientsScreen: React.FC = () => {
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
+    <>
+      <div className="space-y-8 animate-in fade-in duration-700">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl font-black text-white flex items-center gap-3">
@@ -297,10 +287,11 @@ const ClientsScreen: React.FC = () => {
           );
         })}
       </div>
+      </div>
 
       <AnimatePresence>
         {showAddModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -391,7 +382,7 @@ const ClientsScreen: React.FC = () => {
         )}
 
         {editingClient && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -499,7 +490,7 @@ const ClientsScreen: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
-    </div>
+    </>
   );
 };
 

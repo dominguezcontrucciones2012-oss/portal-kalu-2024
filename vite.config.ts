@@ -18,14 +18,36 @@ export default defineConfig(({mode}) => {
     },
     server: {
       port: 3000,
-      host: true,          // accesible en red local (ej: desde celular)
-      open: true,          // abre el navegador automáticamente
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modify—file watching is disabled to prevent flickering during agent edits.
+      host: true,
+      open: true,
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: {
         ignored: ['**/db_mock/**']
       }
     },
+    build: {
+      chunkSizeWarningLimit: 600,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            // Núcleo de React
+            'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+            // Firebase separado para caching largo
+            'vendor-firebase': [
+              'firebase/app',
+              'firebase/auth',
+              'firebase/firestore',
+              'firebase/storage'
+            ],
+            // Gráficas (pesadas, raramente cambian)
+            'vendor-charts': ['recharts'],
+            // Íconos
+            'vendor-lucide': ['lucide-react'],
+            // Animaciones
+            'vendor-motion': ['motion/react'],
+          }
+        }
+      }
+    }
   };
 });
