@@ -1,6 +1,0 @@
-2026/06/11-18:15:43.010 91c Reusing MANIFEST C:\Users\pc\Desktop\kalu_folden_2024\.wwebjs_auth\session\Default\Local Storage\leveldb/MANIFEST-000001
-2026/06/11-18:15:43.073 91c Recovering log #4
-2026/06/11-18:15:43.088 91c Reusing old log C:\Users\pc\Desktop\kalu_folden_2024\.wwebjs_auth\session\Default\Local Storage\leveldb/000004.log 
-2026/06/11-18:17:21.819 2258 Level-0 table #8: started
-2026/06/11-18:17:23.051 2258 Level-0 table #8: 15907 bytes OK
-2026/06/11-18:17:23.372 2258 Delete type=0 #4
