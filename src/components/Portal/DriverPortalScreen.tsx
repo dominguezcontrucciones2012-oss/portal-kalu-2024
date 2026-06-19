@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Truck, MapPin, Phone, CheckCircle, Camera, UploadCloud, X, ArrowLeft, Image as ImageIcon, MessageCircle, AlertTriangle, LogOut } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthProvider';
-import { subscribeToCollection, updateDocument, getDocument } from '../../lib/dbUtils';
+import { subscribeToCollection, updateDocument, getDocument, addDocument } from '../../lib/dbUtils';
 import { useToast } from '../../contexts/ToastProvider';
 import { formatCurrency, compressImage } from '../../lib/utils';
 import { useNavigate } from 'react-router-dom';
@@ -13,6 +13,16 @@ export default function DriverPortalScreen() {
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const { addToast } = useToast();
   const navigate = useNavigate();
+  
+  // Cierre de Jornada state
+  const [showClosureModal, setShowClosureModal] = useState(false);
+  const [closureMethod, setClosureMethod] = useState<'contador' | 'pago_movil'>('contador');
+  const [closureCapture, setClosureCapture] = useState<string | null>(null);
+  const [submittingClosure, setSubmittingClosure] = useState(false);
+
+  // Deuda actual
+  const pendingCashOrders = orders.filter(o => o.status_pedido === 'efectivo_en_ruta');
+  const totalDeudaUsd = pendingCashOrders.reduce((sum, o) => sum + (o.total_usd || 0), 0);
 
   useEffect(() => {
     if (!user || user.role !== 'repartidor') return;
@@ -42,6 +52,41 @@ export default function DriverPortalScreen() {
 
     return () => unsub();
   }, [user]);
+
+  const handleClosureSubmit = async () => {
+    if (totalDeudaUsd === 0) {
+      setShowClosureModal(false);
+      return;
+    }
+    if (closureMethod === 'pago_movil' && !closureCapture) {
+      addToast('error', 'Debes subir un capture del pago móvil');
+      return;
+    }
+    setSubmittingClosure(true);
+    try {
+      const pedidoIds = pendingCashOrders.map(o => o.id);
+      const cierreData = {
+        repartidor_id: user.id,
+        repartidor_nombre: user.username,
+        fecha: new Date().toISOString(),
+        pedidos: pedidoIds,
+        total_usd: totalDeudaUsd,
+        metodo: closureMethod,
+        captures_pago: closureCapture ? [closureCapture] : [],
+        status: 'pendiente'
+      };
+      
+      await addDocument('cierres', cierreData);
+      
+      addToast('success', 'Cierre de jornada enviado a verificación.');
+      setShowClosureModal(false);
+      setClosureCapture(null);
+    } catch(e) {
+      addToast('error', 'Error al enviar el cierre');
+    } finally {
+      setSubmittingClosure(false);
+    }
+  };
 
   const handleDeliver = async (orderId: string, captures: string[], metodoPago: string) => {
     try {
@@ -191,6 +236,9 @@ export default function DriverPortalScreen() {
             <h1 className="text-2xl font-black tracking-tight">{user.username}</h1>
           </div>
           <div className="flex gap-3">
+            <button onClick={() => setShowClosureModal(true)} className="px-4 h-12 rounded-xl bg-orange-500/20 border border-orange-500/30 flex items-center justify-center text-orange-400 font-black text-[10px] uppercase tracking-widest hover:bg-orange-500/30 transition-colors">
+              Cerrar Jornada
+            </button>
             <button onClick={() => setUser(null)} className="w-12 h-12 rounded-full bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400 hover:bg-red-500/30 transition-colors">
               <LogOut size={20} />
             </button>
@@ -262,6 +310,94 @@ export default function DriverPortalScreen() {
           onClose={() => setSelectedOrder(null)} 
           onConfirm={handleDeliver} 
         />
+      )}
+
+      {/* Modal Cierre de Jornada */}
+      {showClosureModal && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col">
+          <div className="flex items-center p-6 border-b border-white/10">
+            <button onClick={() => setShowClosureModal(false)} className="w-10 h-10 bg-white/5 rounded-full flex items-center justify-center text-white mr-4">
+              <ArrowLeft size={20} />
+            </button>
+            <div>
+              <h2 className="text-xl font-black uppercase tracking-tight text-white">Cierre de Jornada</h2>
+              <p className="text-xs text-gray-500 font-bold tracking-widest uppercase mt-1">Rendición de Cuentas</p>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-6 flex flex-col">
+            {totalDeudaUsd === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-center opacity-50">
+                <CheckCircle size={64} className="mb-4 text-green-400" />
+                <h3 className="text-xl font-black uppercase tracking-tight">Todo al Día</h3>
+                <p className="text-sm font-bold mt-2">No tienes pedidos pendientes por rendir.</p>
+                <button onClick={() => setShowClosureModal(false)} className="mt-8 px-6 py-3 bg-white/10 rounded-xl font-bold uppercase tracking-widest text-xs">Cerrar</button>
+              </div>
+            ) : (
+              <>
+                <div className="bg-gradient-to-br from-orange-500/20 to-orange-500/5 border border-orange-500/30 p-6 rounded-3xl mb-8 flex flex-col items-center text-center">
+                  <p className="text-orange-500 text-xs font-black uppercase tracking-widest mb-2">Total a Rendir</p>
+                  <p className="text-5xl font-black text-white tracking-tighter">${formatCurrency(totalDeudaUsd)}</p>
+                  <p className="text-xs text-gray-400 mt-2 font-bold uppercase">{pendingCashOrders.length} pedidos en efectivo</p>
+                </div>
+                
+                <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-4">¿Cómo entregarás el dinero?</h3>
+                <div className="flex gap-2 mb-6">
+                  <button 
+                    onClick={() => setClosureMethod('contador')}
+                    className={`flex-1 py-4 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-all ${closureMethod === 'contador' ? 'bg-orange-600 text-white' : 'bg-white/5 text-gray-500 hover:bg-white/10'}`}
+                  >
+                    Entregar al Contador
+                  </button>
+                  <button 
+                    onClick={() => setClosureMethod('pago_movil')}
+                    className={`flex-1 py-4 text-[10px] font-black uppercase tracking-widest rounded-2xl transition-all ${closureMethod === 'pago_movil' ? 'bg-purple-600 text-white' : 'bg-white/5 text-gray-500 hover:bg-white/10'}`}
+                  >
+                    Pago Móvil a Tienda
+                  </button>
+                </div>
+
+                {closureMethod === 'pago_movil' && (
+                  <div className="mb-8">
+                    <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-4">Capture de Transferencia</h3>
+                    {closureCapture ? (
+                      <div className="relative aspect-video rounded-3xl border border-white/10 overflow-hidden bg-white/5">
+                        <img src={closureCapture} alt="Capture" className="w-full h-full object-cover" />
+                        <button 
+                          onClick={() => setClosureCapture(null)}
+                          className="absolute top-4 right-4 w-10 h-10 bg-black/60 rounded-full flex items-center justify-center text-white backdrop-blur-sm"
+                        >
+                          <X size={20} />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="aspect-video rounded-3xl border-2 border-dashed border-white/20 bg-white/5 flex flex-col items-center justify-center cursor-pointer hover:bg-white/10 transition-colors">
+                        <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const compressedBase64 = await compressImage(file);
+                            setClosureCapture(compressedBase64);
+                          }
+                        }} />
+                        <UploadCloud size={32} className="text-gray-400 mb-3" />
+                        <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Subir Capture</span>
+                      </label>
+                    )}
+                  </div>
+                )}
+
+                <div className="mt-auto">
+                  <button 
+                    onClick={handleClosureSubmit}
+                    disabled={submittingClosure || (closureMethod === 'pago_movil' && !closureCapture)}
+                    className="w-full py-5 bg-white text-black rounded-2xl font-black text-sm uppercase tracking-widest disabled:opacity-50 hover:bg-gray-200 transition-colors"
+                  >
+                    {submittingClosure ? 'Enviando...' : 'Enviar Rendición a Tienda'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

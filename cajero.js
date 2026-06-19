@@ -177,12 +177,102 @@ function iniciarListener() {
             }
         });
     });
+
+    const qCierres = query(collection(db, 'cierres'), where('status', '==', 'pendiente'));
+    onSnapshot(qCierres, (snapshot) => {
+        snapshot.docChanges().forEach(async (change) => {
+            const cierreData = change.doc.data();
+            const cierreId = change.doc.id;
+            
+            if (change.type === 'added' && !cierreData.notificacion_enviada) {
+                // Marcar como enviado
+                await updateDoc(doc(db, 'cierres', cierreId), { notificacion_enviada: true });
+                
+                const msg = `🚨 *CIERRE DE JORNADA*\n\nRepartidor: ${cierreData.repartidor_nombre}\nTotal a rendir: $${cierreData.total_usd}\nMétodo: ${cierreData.metodo === 'contador' ? 'Efectivo al Contador' : 'Pago Móvil'}\nPedidos: ${cierreData.pedidos.length}\n\nResponde a este chat con la palabra *APROBAR CIERRE ${cierreId.substring(0,4)}* o *RECHAZAR CIERRE ${cierreId.substring(0,4)}*`;
+                
+                if (isReady) {
+                    if (cierreData.metodo === 'pago_movil' && cierreData.captures_pago && cierreData.captures_pago.length > 0) {
+                        const capture = cierreData.captures_pago[0];
+                        if (capture.startsWith('data:image')) {
+                            const base64Data = capture.split(',')[1];
+                            const media = new MessageMedia('image/jpeg', base64Data, 'capture.jpg');
+                            await client.sendMessage(`${numeroAdministrador}@c.us`, media, { caption: msg });
+                        } else {
+                            await client.sendMessage(`${numeroAdministrador}@c.us`, msg);
+                        }
+                    } else {
+                        await client.sendMessage(`${numeroAdministrador}@c.us`, msg);
+                    }
+                }
+            }
+        });
+    });
 }
 
 // 5. Escuchar respuestas del administrador por WhatsApp para aprobar pagos
 client.on('message_create', async msg => {
     let body = msg.body.toUpperCase().trim();
-    if (body.startsWith('APROBAR')) {
+    
+    // APROBAR CIERRE DE JORNADA
+    if (body.startsWith('APROBAR CIERRE')) {
+        let shortId = body.replace('APROBAR CIERRE', '').trim();
+        if (shortId.length > 0) {
+            const q = query(collection(db, 'cierres'), where('status', '==', 'pendiente'));
+            const snap = await getDocs(q);
+            let encontrada = false;
+            
+            snap.forEach(async (docSnapshot) => {
+                if (docSnapshot.id.toLowerCase().startsWith(shortId.toLowerCase())) {
+                    encontrada = true;
+                    const data = docSnapshot.data();
+                    
+                    // Aprobar cierre
+                    await updateDoc(doc(db, 'cierres', docSnapshot.id), { status: 'aprobado' });
+                    
+                    // Marcar pedidos como entregados
+                    if (data.pedidos && data.pedidos.length > 0) {
+                        for (const pedidoId of data.pedidos) {
+                            await updateDoc(doc(db, 'sales', pedidoId), { 
+                                status_pedido: 'entregado',
+                                pagada: true
+                            });
+                        }
+                    }
+                    
+                    client.sendMessage(msg.from, `✅ *CIERRE APROBADO*\nSe ha limpiado la deuda del repartidor ${data.repartidor_nombre}.`);
+                }
+            });
+            if (!encontrada) {
+                client.sendMessage(msg.from, `❌ No se encontró ningún cierre pendiente que coincida con el ID *${shortId}*.`);
+            }
+        }
+        return;
+    }
+
+    // RECHAZAR CIERRE DE JORNADA
+    if (body.startsWith('RECHAZAR CIERRE')) {
+        let shortId = body.replace('RECHAZAR CIERRE', '').trim();
+        if (shortId.length > 0) {
+            const q = query(collection(db, 'cierres'), where('status', '==', 'pendiente'));
+            const snap = await getDocs(q);
+            let encontrada = false;
+            
+            snap.forEach(async (docSnapshot) => {
+                if (docSnapshot.id.toLowerCase().startsWith(shortId.toLowerCase())) {
+                    encontrada = true;
+                    await updateDoc(doc(db, 'cierres', docSnapshot.id), { status: 'rechazado' });
+                    client.sendMessage(msg.from, `❌ *CIERRE RECHAZADO*`);
+                }
+            });
+            if (!encontrada) {
+                client.sendMessage(msg.from, `❌ No se encontró ningún cierre pendiente.`);
+            }
+        }
+        return;
+    }
+
+    // APROBAR PEDIDO INDIVIDUAL
+    if (body.startsWith('APROBAR') && !body.startsWith('APROBAR CIERRE')) {
         let shortId = body.replace('APROBAR', '').trim();
         if (shortId.length > 0) {
             // Buscar la venta
@@ -229,7 +319,7 @@ client.on('message_create', async msg => {
                 msg.reply(`❌ No encontré ningún pedido en verificación con el código ${shortId}`);
             }
         }
-    } else if (body.startsWith('RECHAZAR')) {
+    } else if (body.startsWith('RECHAZAR') && !body.startsWith('RECHAZAR CIERRE')) {
         let shortId = body.replace('RECHAZAR', '').trim();
         if (shortId.length > 0) {
             const q = query(collection(db, 'sales'), where('status_pedido', '==', 'verificando_pago'));
