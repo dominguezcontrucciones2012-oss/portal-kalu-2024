@@ -66,7 +66,10 @@ async function solicitarVerificacion(saleId, saleData) {
         // Marcar para no enviar dos veces
         await updateDoc(doc(db, 'sales', saleId), { verificacion_solicitada: true });
         
-        const msgDueño = `🚨 *PAGO PENDIENTE DE VERIFICAR*\n\nPedido #${saleId}\nCliente: ${saleData.nombre_cliente}\nTotal: Bs ${(saleData.total_usd * 40.5).toFixed(2)}\n\nResponde a este chat con la palabra *APROBAR ${saleId.substring(0,4)}* o *RECHAZAR ${saleId.substring(0,4)}*`;
+        const tasaDelPedido = saleData.tasa_momento || 40.50;
+        const totalEnBs = (saleData.total_usd * tasaDelPedido).toFixed(2);
+        
+        const msgDueño = `🚨 *PAGO PENDIENTE DE VERIFICAR*\n\nPedido #${saleId}\nCliente: ${saleData.nombre_cliente}\nTotal: Bs ${totalEnBs} (Tasa: ${tasaDelPedido})\n\nResponde a este chat con la palabra *APROBAR ${saleId.substring(0,4)}* o *RECHAZAR ${saleId.substring(0,4)}*`;
         
         if (isReady) {
             const capture = saleData.captures_pago[0];
