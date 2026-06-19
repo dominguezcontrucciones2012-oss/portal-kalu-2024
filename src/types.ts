@@ -105,6 +105,7 @@ export interface Sale {
   saldo_pendiente_usd: number;
   user_id?: string;
   repartidor_id?: string;
+  estado_repartidor?: 'buscando_repartidor' | 'asignado' | 'en_camino' | 'entregado';
   captures_pago?: string[];
 }
 
@@ -206,6 +207,7 @@ export interface Configuration {
   logo_url?: string;
   moneda_principal: 'USD' | 'BS';
   estado_portal?: 'automatico' | 'abierto' | 'cerrado';
+  n8n_webhook_url?: string;
 }
 
 export interface Movement {

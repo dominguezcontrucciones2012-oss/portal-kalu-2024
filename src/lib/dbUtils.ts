@@ -374,6 +374,23 @@ export const createSale = async (saleData: any) => {
     ...saleData,
     createdAt: serverTimestamp()
   });
+
+  // Notificar a n8n si es un pedido web y hay URL configurada
+  if (saleData.origen === 'web') {
+    try {
+      const config = await getAppConfig();
+      if (config && config.n8n_webhook_url) {
+        fetch(config.n8n_webhook_url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ event: 'new_order', orderId: docRef.id, ...saleData })
+        }).catch(err => console.error("Error notifying n8n:", err));
+      }
+    } catch (e) {
+      console.error("Error fetching config for n8n:", e);
+    }
+  }
+
   return docRef.id;
 };
 

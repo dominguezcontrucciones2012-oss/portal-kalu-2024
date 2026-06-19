@@ -221,6 +221,13 @@ export default function DispatchScreen() {
           <p className="text-gray-400 mt-2 font-bold">
             Zona exclusiva para preparadores. Empaca y asigna.
           </p>
+          <div className="mt-4 bg-pink-500/20 border border-pink-500/50 p-4 rounded-2xl flex items-center gap-3 animate-pulse">
+            <span className="text-2xl">🤖</span>
+            <div>
+              <h4 className="text-pink-400 font-black tracking-widest uppercase text-sm">Cajero Automático Activado</h4>
+              <p className="text-pink-200/70 text-xs font-bold mt-1">El Charbox asignará repartidores y te pedirá confirmar pagos por WhatsApp.</p>
+            </div>
+          </div>
         </div>
 
         <div className="flex gap-4 overflow-x-auto custom-scrollbar pb-2">

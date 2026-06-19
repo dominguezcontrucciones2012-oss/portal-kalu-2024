@@ -213,7 +213,24 @@ const SettingsScreen: React.FC = () => {
             </div>
          </div>
 
-        <div className="flex items-center justify-between p-8 bg-[#3498db]/10 border border-[#3498db]/20 rounded-[2.5rem]">
+         {/* Integraciones */}
+         <div className="bg-white/5 border border-white/10 p-8 rounded-[2.5rem] space-y-4">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <Globe className="text-pink-400" size={20} /> Integración n8n (Chatbot y CRM)
+            </h3>
+            <p className="text-sm text-gray-500 font-medium">URL del Webhook de n8n para notificar automáticamente al repartidor cuando llega un pedido.</p>
+            <div className="space-y-1 mt-4">
+              <input 
+                type="url" 
+                value={config.n8n_webhook_url || ''}
+                onChange={(e) => setConfig({...config, n8n_webhook_url: e.target.value})}
+                placeholder="https://n8n.tu-dominio.com/webhook/kalu-ventas"
+                className="w-full bg-black/30 border border-white/10 rounded-2xl py-4 px-6 text-sm font-bold focus:border-[#3498db] outline-none transition-all"
+              />
+            </div>
+         </div>
+
+        <div className="flex flex-col md:flex-row items-center justify-between p-8 bg-[#3498db]/10 border border-[#3498db]/20 rounded-[2.5rem] gap-4">
            <div className="flex items-center gap-4">
               <ShieldCheck className="text-[#3498db]" size={32} />
               <div className="text-sm text-[#3498db] font-bold">Estos datos se reflejarán en todos los reportes y facturas emitidas.</div>

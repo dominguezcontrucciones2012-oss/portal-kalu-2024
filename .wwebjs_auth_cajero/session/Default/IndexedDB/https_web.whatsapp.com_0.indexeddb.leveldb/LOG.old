@@ -1,0 +1,22 @@
+2026/06/18-20:19:14.165 1644 Reusing MANIFEST C:\Users\pc\Desktop\kalu_folden_2024\.wwebjs_auth_cajero\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/06/18-20:19:14.168 1644 Recovering log #253
+2026/06/18-20:19:14.292 1644 Reusing old log C:\Users\pc\Desktop\kalu_folden_2024\.wwebjs_auth_cajero\session\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/000253.log 
+2026/06/18-20:34:55.050 1644 Level-0 table #263: started
+2026/06/18-20:34:55.174 1644 Level-0 table #263: 1276984 bytes OK
+2026/06/18-20:34:55.184 1644 Delete type=0 #253
+2026/06/18-20:39:22.056 1648 Compacting 1@1 + 6@2 files
+2026/06/18-20:39:22.513 1648 Generated table #264@1: 76738 keys, 2221684 bytes
+2026/06/18-20:39:22.839 1648 Generated table #265@1: 61450 keys, 2246577 bytes
+2026/06/18-20:39:23.100 1648 Generated table #266@1: 26666 keys, 2182612 bytes
+2026/06/18-20:39:23.922 1648 Generated table #267@1: 1425 keys, 2142949 bytes
+2026/06/18-20:39:24.342 1648 Generated table #268@1: 27186 keys, 2242092 bytes
+2026/06/18-20:39:24.390 1648 Generated table #269@1: 5754 keys, 382065 bytes
+2026/06/18-20:39:24.391 1648 Compacted 1@1 + 6@2 files => 11417979 bytes
+2026/06/18-20:39:24.392 1648 compacted to: files[ 0 0 6 0 0 0 0 ]
+2026/06/18-20:39:24.394 1648 Delete type=2 #255
+2026/06/18-20:39:24.394 1648 Delete type=2 #256
+2026/06/18-20:39:24.394 1648 Delete type=2 #257
+2026/06/18-20:39:24.395 1648 Delete type=2 #258
+2026/06/18-20:39:24.395 1648 Delete type=2 #259
+2026/06/18-20:39:24.395 1648 Delete type=2 #260
+2026/06/18-20:39:24.395 1648 Delete type=2 #263
