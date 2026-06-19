@@ -158,6 +158,100 @@ async function procesarPedido(saleId, saleData) {
     }
 }
 
+// ====== CIERRE DE CAJA GENERAL (CRM) ======
+async function generarCierreDiario(fechaCierreStr = null) {
+    try {
+        const targetDate = fechaCierreStr || new Date().toISOString().split('T')[0];
+        
+        // 1. Revisar si ya se cerró
+        const qCierre = query(collection(db, 'cierres_caja'), where('fecha', '==', targetDate));
+        const snapCierre = await getDocs(qCierre);
+        if (!snapCierre.empty) {
+            console.log(`⚠️ El cierre para ${targetDate} ya fue realizado.`);
+            return;
+        }
+
+        // 2. Obtener ventas del día
+        const startOfDay = new Date(targetDate + 'T00:00:00');
+        const endOfDay = new Date(targetDate + 'T23:59:59');
+        const qSales = query(collection(db, 'sales'), where('createdAt', '>=', startOfDay), where('createdAt', '<=', endOfDay));
+        const qSalesData = await getDocs(qSales);
+        
+        const sales = qSalesData.docs.map(doc => doc.data());
+        
+        if (sales.length === 0) {
+            console.log(`⚠️ No hay ventas para el ${targetDate}.`);
+            return;
+        }
+
+        // 3. Calcular totales
+        const totals = sales.reduce((acc, sale) => {
+            acc.usd_cash += sale.pago_efectivo_usd || 0;
+            acc.vueltos += sale.vuelto_entregado_usd || 0;
+            acc.bs_cash += sale.pago_efectivo_bs || 0;
+            acc.pago_movil += sale.pago_movil_bs || 0;
+            acc.biopago += sale.biopago_bdv || 0;
+            acc.debito += sale.pago_debito_bs || 0;
+            acc.total_usd += sale.total_usd || 0;
+            acc.fiado += sale.saldo_pendiente_usd || 0;
+            return acc;
+        }, { usd_cash: 0, vueltos: 0, bs_cash: 0, pago_movil: 0, biopago: 0, debito: 0, total_usd: 0, fiado: 0 });
+
+        const expectedUSDCash = totals.usd_cash - totals.vueltos;
+        const expectedBsCash = totals.bs_cash;
+
+        // 4. Obtener tasa
+        let tasaCierre = 0;
+        const confDocRef = doc(db, 'configuracion', 'global');
+        const confDoc = await getDoc(confDocRef);
+        if (confDoc.exists()) {
+            tasaCierre = confDoc.data().tasa_bcv || 0;
+        }
+
+        // 5. Guardar el cierre asumiendo físico = 0 (diferencia negativa total)
+        const newClosure = {
+            fecha: targetDate,
+            monto_bs: expectedBsCash,
+            monto_usd: expectedUSDCash,
+            pago_movil: totals.pago_movil,
+            transferencia: totals.pago_movil,
+            biopago: totals.biopago,
+            tarjeta_debito: totals.debito,
+            tasa_cierre: tasaCierre,
+            total_ventas_usd: totals.total_usd,
+            total_compras_usd: 0,
+            fiado_dia_usd: totals.fiado,
+            monto_real_usd: 0,
+            monto_real_bs: 0,
+            diferencia_usd: -expectedUSDCash,
+            diferencia_bs: -expectedBsCash,
+            observaciones: `Cierre Automático del Robot. Vueltos: $${totals.vueltos.toFixed(2)}. Reparar declaración física en el CRM.`,
+            cajero_nombre: 'Robot Cajero',
+            createdAt: new Date()
+        };
+
+        await addDoc(collection(db, 'cierres_caja'), newClosure);
+
+        // 6. Enviar WhatsApp
+        if (isReady) {
+            const msg = `🧾 *CIERRE DE CAJA DIARIO*\n\nFecha: ${targetDate}\nVentas Totales: $${totals.total_usd.toFixed(2)}\n\n*Recibido en Sistema:*\nUSD Efectivo: $${expectedUSDCash.toFixed(2)} (Neto)\nBS Efectivo: Bs ${expectedBsCash.toFixed(2)}\nPago Móvil: Bs ${totals.pago_movil.toFixed(2)}\n\n_He guardado la declaración física en 0. Si necesitas cuadrar el efectivo real, entra al CRM > Cierres y presiona Reparar._`;
+            await client.sendMessage(`${numeroAdministrador}@c.us`, msg);
+        }
+        
+        console.log(`✅ Cierre de caja del ${targetDate} generado con éxito.`);
+    } catch (e) {
+        console.error('❌ Error generando cierre automático:', e);
+    }
+}
+
+// Cron Job a las 10:00 PM
+setInterval(() => {
+    const now = new Date();
+    if (now.getHours() === 22 && now.getMinutes() === 0) {
+        generarCierreDiario();
+    }
+}, 60000); // Revisa cada 1 minuto
+
 // Inicializar el Listener
 function iniciarListener() {
     const q = query(collection(db, 'sales'), where('origen', '==', 'web'));
@@ -212,6 +306,13 @@ function iniciarListener() {
 // 5. Escuchar respuestas del administrador por WhatsApp para aprobar pagos
 client.on('message_create', async msg => {
     let body = msg.body.toUpperCase().trim();
+    
+    // GENERAR CIERRE MANUAL DE LA TIENDA
+    if (body === 'CERRAR TIENDA' || body === 'GENERAR CIERRE') {
+        client.sendMessage(msg.from, `⏳ Iniciando el Cierre de Caja General... Dame un segundo.`);
+        await generarCierreDiario();
+        return;
+    }
     
     // APROBAR CIERRE DE JORNADA
     if (body.startsWith('APROBAR CIERRE')) {

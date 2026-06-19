@@ -10,11 +10,14 @@ import {
   AlertTriangle,
   CheckCircle2,
   RefreshCw,
-  Calendar
+  Calendar,
+  Edit2,
+  X,
+  Check
 } from 'lucide-react';
 import { formatCurrency, cn } from '../../lib/utils';
 import { motion } from 'motion/react';
-import { getTodaySales, getLatestTasa, saveClosure, getClosures } from '../../lib/dbUtils';
+import { getTodaySales, getLatestTasa, saveClosure, getClosures, updateDocument } from '../../lib/dbUtils';
 import { type Sale, type CierreCaja } from '../../types';
 import { useToast } from '../../contexts/ToastProvider';
 
@@ -32,6 +35,8 @@ const ClosureScreen: React.FC = () => {
     monto_real_bs: 0,
     observaciones: ''
   });
+  const [repairingClosureId, setRepairingClosureId] = useState<string | null>(null);
+  const [repairData, setRepairData] = useState({ monto_real_usd: 0, monto_real_bs: 0 });
 
   const fetchData = async () => {
     setLoading(true);
@@ -76,6 +81,31 @@ const ClosureScreen: React.FC = () => {
   
   const differenceUSD = (physicalData.monto_real_usd || 0) - expectedUSDCash;
   const differenceBS = (physicalData.monto_real_bs || 0) - expectedBsCash;
+
+  const handleRepairSave = async (c: any) => {
+    try {
+      const expectedUSDCash = c.monto_usd || 0;
+      const expectedBsCash = c.monto_bs || 0;
+      
+      const diffUSD = repairData.monto_real_usd - expectedUSDCash;
+      const diffBS = repairData.monto_real_bs - expectedBsCash;
+
+      await updateDocument('cierres_caja', c.id, {
+        monto_real_usd: repairData.monto_real_usd,
+        monto_real_bs: repairData.monto_real_bs,
+        diferencia_usd: diffUSD,
+        diferencia_bs: diffBS,
+        observaciones: (c.observaciones || '') + ' (Reparado manualmente)'
+      });
+
+      addToast('success', 'Cierre reparado exitosamente');
+      setRepairingClosureId(null);
+      fetchData();
+    } catch (e) {
+      console.error(e);
+      addToast('error', 'Error al reparar cierre');
+    }
+  };
 
   const handleFinalize = async () => {
     setLoading(true);
