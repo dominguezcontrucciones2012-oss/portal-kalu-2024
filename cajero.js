@@ -47,6 +47,19 @@ client.on('auth_failure', msg => {
 // Número de WhatsApp del administrador (Reemplazar si es necesario)
 let numeroAdministrador = '584125782054@c.us';
 
+// Función para formatear número de teléfono al formato internacional de WhatsApp (Venezuela)
+function formatearTelefonoWhatsApp(telefonoRaw) {
+    if (!telefonoRaw) return '';
+    let tel = telefonoRaw.replace(/\D/g, '');
+    if (tel.length === 11 && tel.startsWith('0')) {
+        return '58' + tel.substring(1);
+    }
+    if (tel.length === 10 && (tel.startsWith('412') || tel.startsWith('414') || tel.startsWith('424') || tel.startsWith('416') || tel.startsWith('426') || tel.startsWith('418'))) {
+        return '58' + tel;
+    }
+    return tel;
+}
+
 // 3. Escuchar la base de datos (Ventas Pendientes)
 let unsubscribe = null;
 let repartidores = [];
@@ -60,7 +73,8 @@ async function cargarRepartidores() {
 }
 
 async function solicitarVerificacion(saleId, saleData) {
-    if (!saleData.captures_pago || saleData.captures_pago.length === 0) return;
+    let captureUrl = saleData.capture_base64 || (saleData.captures_pago && saleData.captures_pago[0]);
+    if (!captureUrl) return;
     
     try {
         // Marcar para no enviar dos veces
@@ -72,7 +86,7 @@ async function solicitarVerificacion(saleId, saleData) {
         const msgDueño = `🚨 *PAGO PENDIENTE DE VERIFICAR*\n\nPedido #${saleId}\nCliente: ${saleData.nombre_cliente}\nTotal: Bs ${totalEnBs} (Tasa: ${tasaDelPedido})\n\nResponde a este chat con la palabra *APROBAR ${saleId.substring(0,4)}* o *RECHAZAR ${saleId.substring(0,4)}*`;
         
         if (isReady) {
-            const capture = saleData.captures_pago[0];
+            const capture = captureUrl;
             if (capture.startsWith('data:image')) {
                 // Es una imagen en Base64
                 const base64Data = capture.split(',')[1];
@@ -118,7 +132,7 @@ async function procesarPedido(saleId, saleData) {
     try {
         const docRef = doc(db, 'sales', saleId);
         
-        if (saleData.captures_pago && saleData.captures_pago.length > 0) {
+        if ((saleData.captures_pago && saleData.captures_pago.length > 0) || saleData.capture_base64) {
             // El cliente subió un pago desde el principio
             await updateDoc(docRef, {
                 status_pedido: 'verificando_pago',
@@ -134,8 +148,7 @@ async function procesarPedido(saleId, saleData) {
             console.log(`✅ Pedido asignado a ${repartidorElegido.username}`);
 
             if (isReady && repartidorElegido.telefono) {
-                let tel = repartidorElegido.telefono.replace(/\D/g, '');
-                if (tel.length === 11 && tel.startsWith('04')) tel = '58' + tel.substring(1);
+                let tel = formatearTelefonoWhatsApp(repartidorElegido.telefono);
                 const msgRepartidor = `🚨 *NUEVO PEDIDO ASIGNADO*\n\nHola ${repartidorElegido.username}, el Charbox te ha asignado un nuevo pedido.\n\n*Cliente:* ${saleData.nombre_cliente}\n*Total a Cobrar:* $${saleData.total_usd}\n\nAbre tu portal de Kalu para ver la dirección.`;
                 await client.sendMessage(`${tel}@c.us`, msgRepartidor);
             }
@@ -168,17 +181,17 @@ function iniciarListener() {
 
 // 5. Escuchar respuestas del administrador por WhatsApp para aprobar pagos
 client.on('message_create', async msg => {
-    if (msg.body.toUpperCase().startsWith('APROBAR')) {
-        const partes = msg.body.split(' ');
-        if (partes.length >= 2) {
-            const shortId = partes[1];
+    let body = msg.body.toUpperCase().trim();
+    if (body.startsWith('APROBAR')) {
+        let shortId = body.replace('APROBAR', '').trim();
+        if (shortId.length > 0) {
             // Buscar la venta
             const q = query(collection(db, 'sales'), where('status_pedido', '==', 'verificando_pago'));
             const snap = await getDocs(q);
             let encontrada = false;
             
             snap.forEach(async (docSnapshot) => {
-                if (docSnapshot.id.startsWith(shortId)) {
+                if (docSnapshot.id.toLowerCase().startsWith(shortId.toLowerCase())) {
                     encontrada = true;
                     const data = docSnapshot.data();
                     
@@ -200,8 +213,7 @@ client.on('message_create', async msg => {
                     if (data.repartidor_id) {
                         const rep = repartidores.find(r => r.id === data.repartidor_id);
                         if (rep && rep.telefono) {
-                            let tel = rep.telefono.replace(/\D/g, '');
-                            if (tel.length === 11 && tel.startsWith('04')) tel = '58' + tel.substring(1);
+                            let tel = formatearTelefonoWhatsApp(rep.telefono);
                             
                             const msgRep = nuevoStatus === 'entregado' 
                                 ? `✅ El pago de ${data.nombre_cliente} fue aprobado. Has completado la entrega con éxito.`
@@ -217,17 +229,14 @@ client.on('message_create', async msg => {
                 msg.reply(`❌ No encontré ningún pedido en verificación con el código ${shortId}`);
             }
         }
-    }
-    
-    if (msg.body.toUpperCase().startsWith('RECHAZAR')) {
-        const partes = msg.body.split(' ');
-        if (partes.length >= 2) {
-            const shortId = partes[1];
+    } else if (body.startsWith('RECHAZAR')) {
+        let shortId = body.replace('RECHAZAR', '').trim();
+        if (shortId.length > 0) {
             const q = query(collection(db, 'sales'), where('status_pedido', '==', 'verificando_pago'));
             const snap = await getDocs(q);
             
             snap.forEach(async (docSnapshot) => {
-                if (docSnapshot.id.startsWith(shortId)) {
+                if (docSnapshot.id.toLowerCase().startsWith(shortId.toLowerCase())) {
                     await updateDoc(doc(db, 'sales', docSnapshot.id), {
                         status_pedido: 'listo',
                         captures_pago: []

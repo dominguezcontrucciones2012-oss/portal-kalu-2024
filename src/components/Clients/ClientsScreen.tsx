@@ -16,9 +16,12 @@ import { subscribeToCollection, createClient, getLatestTasa, updateDocument, res
 import { type Client } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from '../../contexts/ToastProvider';
+
 
 const ClientsScreen: React.FC = () => {
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [clients, setClients] = useState<Client[]>([]);
   const [usersMap, setUsersMap] = useState<Record<string, any>>({});
   const [search, setSearch] = useState('');

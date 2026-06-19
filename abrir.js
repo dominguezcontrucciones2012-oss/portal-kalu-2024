@@ -7,7 +7,10 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 async function abrir() {
-  await setDoc(doc(db, 'configuracion', 'global'), { estado_portal: 'abierto' }, { merge: true });
+  await setDoc(doc(db, 'configuracion', 'global'), { 
+      estado_portal: 'abierto',
+      portal_fuera_servicio: false 
+  }, { merge: true });
   console.log("✅ Portal Público Abierto Exitosamente");
   process.exit(0);
 }

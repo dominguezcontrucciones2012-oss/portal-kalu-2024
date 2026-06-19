@@ -45,11 +45,13 @@ export default function DriverPortalScreen() {
 
   const handleDeliver = async (orderId: string, captures: string[], metodoPago: string) => {
     try {
-      // Si el mtodo es efectivo, no necesita que aprueben el capture, 
-      // pero el pedido se queda 'efectivo_en_ruta' para que le cobren al repartidor despus.
-      const status_pedido = (metodoPago === 'efectivo_usd' || metodoPago === 'efectivo_bs') 
-        ? 'efectivo_en_ruta' 
-        : 'verificando_pago';
+      let status_pedido = 'verificando_pago';
+      
+      if (metodoPago === 'ya_pagado') {
+        status_pedido = 'entregado';
+      } else if (metodoPago === 'efectivo_usd' || metodoPago === 'efectivo_bs') {
+        status_pedido = 'efectivo_en_ruta';
+      }
 
       await updateDocument('sales', orderId, {
         status_pedido,
@@ -59,8 +61,10 @@ export default function DriverPortalScreen() {
       
       if (status_pedido === 'efectivo_en_ruta') {
         addToast('success', 'Entregado en Efectivo. Recuerda entregar el billete.');
+      } else if (status_pedido === 'entregado') {
+        addToast('success', 'Pedido marcado como entregado exitosamente.');
       } else {
-        addToast('success', 'Pago enviado. Esperando verificacin de tienda.');
+        addToast('success', 'Pago enviado. Esperando verificación de tienda.');
       }
       setSelectedOrder(null);
     } catch (e: any) {
@@ -298,60 +302,70 @@ function PaymentModal({ order, onClose, onConfirm }: { order: any, onClose: () =
           <p className="text-5xl font-black text-white tracking-tighter">${formatCurrency(order.total_usd)}</p>
         </div>
 
-        <div className="mb-6 bg-white/5 p-2 rounded-2xl flex gap-2">
-          <button 
-            onClick={() => setMetodoPago('pago_movil')}
-            className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${metodoPago === 'pago_movil' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:bg-white/5'}`}
-          >
-            Pago Mvil / Transf.
-          </button>
-          <button 
-            onClick={() => setMetodoPago('efectivo_usd')}
-            className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${metodoPago === 'efectivo_usd' ? 'bg-green-600 text-white' : 'text-gray-500 hover:bg-white/5'}`}
-          >
-            Efectivo USD
-          </button>
-          <button 
-            onClick={() => setMetodoPago('efectivo_bs')}
-            className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${metodoPago === 'efectivo_bs' ? 'bg-green-600 text-white' : 'text-gray-500 hover:bg-white/5'}`}
-          >
-            Efectivo BS
-          </button>
-        </div>
-
-        {metodoPago === 'pago_movil' && (
+        {order.pagada ? (
+          <div className="bg-green-500/20 border border-green-500/30 text-green-400 p-6 rounded-3xl mb-8 flex flex-col items-center text-center">
+            <CheckCircle size={48} className="mb-4" />
+            <h3 className="text-xl font-black uppercase tracking-tight">PAGO VERIFICADO</h3>
+            <p className="text-sm font-bold opacity-80 mt-2">El administrador ya confirmó el pago. Solo procede a entregar el pedido.</p>
+          </div>
+        ) : (
           <>
-            <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-4">Capturas de Pago</h3>
-            <div className="grid grid-cols-2 gap-4 mb-8">
-              {captures.map((cap, i) => (
-                <div key={i} className="relative aspect-square rounded-2xl border border-white/10 overflow-hidden bg-white/5">
-                  <img src={cap} alt="Capture" className="w-full h-full object-cover" />
-                  <button 
-                    onClick={() => setCaptures(captures.filter((_, idx) => idx !== i))}
-                    className="absolute top-2 right-2 w-8 h-8 bg-black/60 rounded-full flex items-center justify-center text-white backdrop-blur-sm"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-              ))}
-              <label className="aspect-square rounded-2xl border-2 border-dashed border-white/20 bg-white/5 flex flex-col items-center justify-center cursor-pointer hover:bg-white/10 transition-colors">
-                <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
-                <Camera size={28} className="text-gray-400 mb-2" />
-                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Subir Foto</span>
-              </label>
+            <div className="mb-6 bg-white/5 p-2 rounded-2xl flex gap-2">
+              <button 
+                onClick={() => setMetodoPago('pago_movil')}
+                className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${metodoPago === 'pago_movil' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:bg-white/5'}`}
+              >
+                Pago Mvil / Transf.
+              </button>
+              <button 
+                onClick={() => setMetodoPago('efectivo_usd')}
+                className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${metodoPago === 'efectivo_usd' ? 'bg-green-600 text-white' : 'text-gray-500 hover:bg-white/5'}`}
+              >
+                Efectivo USD
+              </button>
+              <button 
+                onClick={() => setMetodoPago('efectivo_bs')}
+                className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${metodoPago === 'efectivo_bs' ? 'bg-green-600 text-white' : 'text-gray-500 hover:bg-white/5'}`}
+              >
+                Efectivo BS
+              </button>
             </div>
+
+            {metodoPago === 'pago_movil' && (
+              <>
+                <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-4">Capturas de Pago</h3>
+                <div className="grid grid-cols-2 gap-4 mb-8">
+                  {captures.map((cap, i) => (
+                    <div key={i} className="relative aspect-square rounded-2xl border border-white/10 overflow-hidden bg-white/5">
+                      <img src={cap} alt="Capture" className="w-full h-full object-cover" />
+                      <button 
+                        onClick={() => setCaptures(captures.filter((_, idx) => idx !== i))}
+                        className="absolute top-2 right-2 w-8 h-8 bg-black/60 rounded-full flex items-center justify-center text-white backdrop-blur-sm"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ))}
+                  <label className="aspect-square rounded-2xl border-2 border-dashed border-white/20 bg-white/5 flex flex-col items-center justify-center cursor-pointer hover:bg-white/10 transition-colors">
+                    <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} />
+                    <Camera size={28} className="text-gray-400 mb-2" />
+                    <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Subir Foto</span>
+                  </label>
+                </div>
+              </>
+            )}
           </>
         )}
 
         <div className="mt-auto pt-6">
-          <button
-            onClick={() => onConfirm(order.id, captures, metodoPago)}
-            className={`w-full py-4 rounded-2xl font-black uppercase tracking-[2px] text-sm flex items-center justify-center gap-2 transition-all ${(metodoPago !== 'pago_movil' || captures.length > 0) ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-xl shadow-purple-900/50' : 'bg-white/10 text-gray-500 cursor-not-allowed'}`}
-            disabled={metodoPago === 'pago_movil' && captures.length === 0}
-          >
-            <CheckCircle size={18} /> Enviar Pago a Verificación
-          </button>
-          {captures.length === 0 && (
+          <button 
+          onClick={() => onConfirm(order.id, order.pagada ? [] : captures, order.pagada ? 'ya_pagado' : metodoPago)}
+          disabled={!order.pagada && metodoPago === 'pago_movil' && captures.length === 0}
+          className="w-full py-5 bg-white text-black rounded-2xl font-black text-sm uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-200 transition-colors"
+        >
+          {order.pagada ? 'Marcar como Entregado' : (metodoPago === 'pago_movil' ? 'Notificar Pago Móvil' : 'Notificar Cobro Efectivo')}
+        </button>
+          {!order.pagada && captures.length === 0 && metodoPago === 'pago_movil' && (
             <p className="text-center text-xs text-orange-400 mt-4 font-bold">Debes subir al menos un comprobante de pago para finalizar.</p>
           )}
         </div>
