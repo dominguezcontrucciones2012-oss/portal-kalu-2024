@@ -2,8 +2,11 @@ import pkg from 'whatsapp-web.js';
 const { Client, LocalAuth, MessageMedia } = pkg;
 import qrcode from 'qrcode-terminal';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, query, where, onSnapshot, getDocs, updateDoc, doc, getDoc } from 'firebase/firestore';
+import { getFirestore, collection, query, where, onSnapshot, getDocs, updateDoc, doc, getDoc, addDoc } from 'firebase/firestore';
 import fs from 'fs';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 // 1. Cargar config de Firebase
 const firebaseConfig = JSON.parse(fs.readFileSync(new URL('./firebase-applet-config.json', import.meta.url)));
@@ -44,8 +47,8 @@ client.on('auth_failure', msg => {
     console.error('❌ Error de Autenticación en WhatsApp', msg);
 });
 
-// Número de WhatsApp del administrador (Reemplazar si es necesario)
-let numeroAdministrador = '584125782054@c.us';
+// Número de WhatsApp del administrador (Reemplazar en .env si es necesario)
+let numeroAdministrador = process.env.ADMIN_WHATSAPP_NUMBER || '584125782054@c.us';
 
 // Función para formatear número de teléfono al formato internacional de WhatsApp (Venezuela)
 function formatearTelefonoWhatsApp(telefonoRaw) {
@@ -158,8 +161,38 @@ async function procesarPedido(saleId, saleData) {
     }
 }
 
+let closureState = {
+    activo: false,
+    step: null,
+    usd: 0,
+    bs: 0,
+    timeout: null
+};
+
+async function iniciarCierreConversacional(msgFrom) {
+    if (closureState.activo) {
+        client.sendMessage(msgFrom, `⏳ Ya hay un proceso de cierre activo. Dime los Dólares o Bolívares que faltan.`);
+        return;
+    }
+    
+    closureState.activo = true;
+    closureState.step = 'usd';
+    closureState.usd = 0;
+    closureState.bs = 0;
+    
+    client.sendMessage(msgFrom, `⏳ *Iniciando Cierre de Caja General.*\n\n💵 ¿Cuánto efectivo físico tienes en *Dólares*?\n(Responde solo con el número, ej: 20 o 0)`);
+    
+    closureState.timeout = setTimeout(async () => {
+        if (closureState.activo) {
+            closureState.activo = false;
+            await client.sendMessage(msgFrom, `⏰ Tiempo de espera agotado (10 min). Generando cierre automático asumiendo caja física en 0...`);
+            await generarCierreDiario(null, 0, 0);
+        }
+    }, 10 * 60 * 1000);
+}
+
 // ====== CIERRE DE CAJA GENERAL (CRM) ======
-async function generarCierreDiario(fechaCierreStr = null) {
+async function generarCierreDiario(fechaCierreStr = null, realUSD = 0, realBS = 0) {
     try {
         const targetDate = fechaCierreStr || new Date().toISOString().split('T')[0];
         
@@ -200,15 +233,29 @@ async function generarCierreDiario(fechaCierreStr = null) {
         const expectedUSDCash = totals.usd_cash - totals.vueltos;
         const expectedBsCash = totals.bs_cash;
 
-        // 4. Obtener tasa
-        let tasaCierre = 0;
-        const confDocRef = doc(db, 'configuracion', 'global');
-        const confDoc = await getDoc(confDocRef);
-        if (confDoc.exists()) {
-            tasaCierre = confDoc.data().tasa_bcv || 0;
+        // 4. Obtener tasa desde la colección tasas_bcv
+        let tasaCierre = 40.50;
+        try {
+            const tasasRef = collection(db, 'tasas_bcv');
+            const qTasa = query(tasasRef, where('fecha', '==', targetDate));
+            const snapTasa = await getDocs(qTasa);
+            if (!snapTasa.empty) {
+                tasaCierre = snapTasa.docs[0].data().valor;
+            } else {
+                const allTasas = await getDocs(query(tasasRef));
+                if (!allTasas.empty) {
+                    const sorted = allTasas.docs.map(d => d.data()).sort((a, b) => b.fecha.localeCompare(a.fecha));
+                    tasaCierre = sorted[0].valor;
+                }
+            }
+        } catch (e) {
+            console.error('Error obteniendo tasa BCV:', e);
         }
 
-        // 5. Guardar el cierre asumiendo físico = 0 (diferencia negativa total)
+        const difUSD = realUSD - expectedUSDCash;
+        const difBS = realBS - expectedBsCash;
+
+        // 5. Guardar el cierre 
         const newClosure = {
             fecha: targetDate,
             monto_bs: expectedBsCash,
@@ -221,11 +268,11 @@ async function generarCierreDiario(fechaCierreStr = null) {
             total_ventas_usd: totals.total_usd,
             total_compras_usd: 0,
             fiado_dia_usd: totals.fiado,
-            monto_real_usd: 0,
-            monto_real_bs: 0,
-            diferencia_usd: -expectedUSDCash,
-            diferencia_bs: -expectedBsCash,
-            observaciones: `Cierre Automático del Robot. Vueltos: $${totals.vueltos.toFixed(2)}. Reparar declaración física en el CRM.`,
+            monto_real_usd: realUSD,
+            monto_real_bs: realBS,
+            diferencia_usd: difUSD,
+            diferencia_bs: difBS,
+            observaciones: `Cierre Automático Conversacional. Vueltos: $${totals.vueltos.toFixed(2)}.`,
             cajero_nombre: 'Robot Cajero',
             createdAt: new Date()
         };
@@ -234,8 +281,8 @@ async function generarCierreDiario(fechaCierreStr = null) {
 
         // 6. Enviar WhatsApp
         if (isReady) {
-            const msg = `🧾 *CIERRE DE CAJA DIARIO*\n\nFecha: ${targetDate}\nVentas Totales: $${totals.total_usd.toFixed(2)}\n\n*Recibido en Sistema:*\nUSD Efectivo: $${expectedUSDCash.toFixed(2)} (Neto)\nBS Efectivo: Bs ${expectedBsCash.toFixed(2)}\nPago Móvil: Bs ${totals.pago_movil.toFixed(2)}\n\n_He guardado la declaración física en 0. Si necesitas cuadrar el efectivo real, entra al CRM > Cierres y presiona Reparar._`;
-            await client.sendMessage(`${numeroAdministrador}@c.us`, msg);
+            const msg = `🧾 *CIERRE DE CAJA DIARIO*\n\nFecha: ${targetDate}\nVentas Totales: $${totals.total_usd.toFixed(2)}\n\n*Cuadre Dólares:*\nEsperado: $${expectedUSDCash.toFixed(2)} | Real: $${realUSD.toFixed(2)}\nDiferencia: $${difUSD.toFixed(2)}\n\n*Cuadre Bolívares:*\nEsperado: Bs ${expectedBsCash.toFixed(2)} | Real: Bs ${realBS.toFixed(2)}\nDiferencia: Bs ${difBS.toFixed(2)}\n\n*Otros Métodos:*\nPago Móvil: Bs ${totals.pago_movil.toFixed(2)}\nTasa Aplicada: ${tasaCierre} BS/USD\n\n_✅ Cierre registrado y cuadrado exitosamente._`;
+            await client.sendMessage(numeroAdministrador, msg);
         }
         
         console.log(`✅ Cierre de caja del ${targetDate} generado con éxito.`);
@@ -248,7 +295,7 @@ async function generarCierreDiario(fechaCierreStr = null) {
 setInterval(() => {
     const now = new Date();
     if (now.getHours() === 22 && now.getMinutes() === 0) {
-        generarCierreDiario();
+        iniciarCierreConversacional(numeroAdministrador);
     }
 }, 60000); // Revisa cada 1 minuto
 
@@ -279,24 +326,34 @@ function iniciarListener() {
             const cierreId = change.doc.id;
             
             if (change.type === 'added' && !cierreData.notificacion_enviada) {
-                // Marcar como enviado
-                await updateDoc(doc(db, 'cierres', cierreId), { notificacion_enviada: true });
-                
-                const msg = `🚨 *CIERRE DE JORNADA*\n\nRepartidor: ${cierreData.repartidor_nombre}\nTotal a rendir: $${cierreData.total_usd}\nMétodo: ${cierreData.metodo === 'contador' ? 'Efectivo al Contador' : 'Pago Móvil'}\nPedidos: ${cierreData.pedidos.length}\n\nResponde a este chat con la palabra *APROBAR CIERRE ${cierreId.substring(0,4)}* o *RECHAZAR CIERRE ${cierreId.substring(0,4)}*`;
-                
-                if (isReady) {
-                    if (cierreData.metodo === 'pago_movil' && cierreData.captures_pago && cierreData.captures_pago.length > 0) {
-                        const capture = cierreData.captures_pago[0];
-                        if (capture.startsWith('data:image')) {
-                            const base64Data = capture.split(',')[1];
-                            const media = new MessageMedia('image/jpeg', base64Data, 'capture.jpg');
-                            await client.sendMessage(`${numeroAdministrador}@c.us`, media, { caption: msg });
-                        } else {
-                            await client.sendMessage(`${numeroAdministrador}@c.us`, msg);
+                try {
+                    // Marcar como enviado inmediatamente
+                    await updateDoc(doc(db, 'cierres', cierreId), { notificacion_enviada: true });
+                    
+                    const numPedidos = cierreData.pedidos ? cierreData.pedidos.length : 0;
+                    const msg = `🚨 *CIERRE DE JORNADA*\n\nRepartidor: ${cierreData.repartidor_nombre || 'Desconocido'}\nTotal a rendir: $${cierreData.total_usd || 0}\nMétodo: ${cierreData.metodo === 'contador' ? 'Efectivo al Contador' : 'Pago Móvil'}\nPedidos: ${numPedidos}\n\nResponde a este chat con la palabra *APROBAR CIERRE ${cierreId.substring(0,4)}* o *RECHAZAR CIERRE ${cierreId.substring(0,4)}*`;
+                    
+                    if (isReady) {
+                        // PRIMERO enviamos el texto para asegurar que llegue
+                        await client.sendMessage(numeroAdministrador, msg);
+                        
+                        // LUEGO intentamos enviar la imagen si existe
+                        if (cierreData.metodo === 'pago_movil' && cierreData.captures_pago && cierreData.captures_pago.length > 0) {
+                            const capture = cierreData.captures_pago[0];
+                            if (capture && capture.includes('base64,')) {
+                                try {
+                                    const base64Data = capture.split('base64,')[1];
+                                    const media = new MessageMedia('image/jpeg', base64Data, 'capture.jpg');
+                                    await client.sendMessage(numeroAdministrador, media);
+                                } catch (mediaErr) {
+                                    console.error('❌ Error enviando la imagen del pago móvil:', mediaErr.message);
+                                    await client.sendMessage(numeroAdministrador, `(No se pudo adjuntar el capture del pago móvil automáticamente, el repartidor deberá mostrarlo).`);
+                                }
+                            }
                         }
-                    } else {
-                        await client.sendMessage(`${numeroAdministrador}@c.us`, msg);
                     }
+                } catch (err) {
+                    console.error('❌ Error procesando nuevo cierre de jornada:', err);
                 }
             }
         });
@@ -306,11 +363,49 @@ function iniciarListener() {
 // 5. Escuchar respuestas del administrador por WhatsApp para aprobar pagos
 client.on('message_create', async msg => {
     let body = msg.body.toUpperCase().trim();
+
+    // FLUJO CONVERSACIONAL DE CIERRE
+    if (closureState.activo && msg.from === numeroAdministrador) {
+        let num = parseFloat(body);
+        if (isNaN(num)) {
+            // Ignorar comandos normales si estan activos
+            if (body === 'CERRAR TIENDA' || body === 'GENERAR CIERRE') {
+                client.sendMessage(msg.from, `⏳ Ya estoy esperando que me des los montos. Dime los Dólares físicos.`);
+            } else if (!body.includes('APROBAR')) {
+                client.sendMessage(msg.from, `❌ Formato inválido. Por favor, responde solo con números (puedes usar punto para decimales).`);
+            }
+            return;
+        }
+
+        if (closureState.step === 'usd') {
+            closureState.usd = num;
+            closureState.step = 'bs';
+            client.sendMessage(msg.from, `🇻🇪 Entendido. ¿Cuánto efectivo físico tienes en *Bolívares*?\n(Responde solo con el número)`);
+            
+            // Reiniciar timeout
+            clearTimeout(closureState.timeout);
+            closureState.timeout = setTimeout(async () => {
+                if (closureState.activo) {
+                    closureState.activo = false;
+                    await client.sendMessage(msg.from, `⏰ Tiempo agotado. Generando cierre asumiendo Bs en 0...`);
+                    await generarCierreDiario(null, closureState.usd, 0);
+                }
+            }, 10 * 60 * 1000);
+            return;
+        } 
+        else if (closureState.step === 'bs') {
+            closureState.bs = num;
+            closureState.activo = false;
+            clearTimeout(closureState.timeout);
+            client.sendMessage(msg.from, `✅ ¡Datos recibidos! Cuadrando y guardando cierre en la base de datos...`);
+            await generarCierreDiario(null, closureState.usd, closureState.bs);
+            return;
+        }
+    }
     
     // GENERAR CIERRE MANUAL DE LA TIENDA
     if (body === 'CERRAR TIENDA' || body === 'GENERAR CIERRE') {
-        client.sendMessage(msg.from, `⏳ Iniciando el Cierre de Caja General... Dame un segundo.`);
-        await generarCierreDiario();
+        iniciarCierreConversacional(msg.from);
         return;
     }
     

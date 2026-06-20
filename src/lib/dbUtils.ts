@@ -11,7 +11,9 @@ import {
   getDoc,
   serverTimestamp,
   increment,
-  onSnapshot
+  onSnapshot,
+  orderBy,
+  limit
 } from 'firebase/firestore';
 import { db, isMock } from './firebase';
 import { MOCK_PRODUCTS, MOCK_CLIENTS, MOCK_SALES } from '../data/mockData';
@@ -534,11 +536,11 @@ export const getLatestTasa = async () => {
     return snapshot.docs[0].data().valor;
   }
   
-  // Si no hay hoy, buscar la última
-  const allTasas = await getDocs(query(tasasRef));
+  // Si no hay hoy, buscar la última usando orderBy y limit en Firestore
+  const qAll = query(tasasRef, orderBy('fecha', 'desc'), limit(1));
+  const allTasas = await getDocs(qAll);
   if (!allTasas.empty) {
-    const sorted = allTasas.docs.sort((a, b) => b.data().fecha.localeCompare(a.data().fecha));
-    return sorted[0].data().valor;
+    return allTasas.docs[0].data().valor;
   }
   
   return 40.50; // Fallback

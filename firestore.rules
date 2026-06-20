@@ -46,8 +46,8 @@ service cloud.firestore {
 
     // Sales
     match /sales/{saleId} {
-      allow read: if isSignedIn() && (isStaff() || (incoming() == null && existing().clienteId == request.auth.uid));
-      allow create: if isStaff();
+      allow read: if isSignedIn() && (isStaff() || existing().cliente_id == request.auth.uid);
+      allow create: if isStaff() || (isSignedIn() && incoming().cliente_id == request.auth.uid);
       allow update, delete: if false; // Invariant: Sales are immutable
     }
   }

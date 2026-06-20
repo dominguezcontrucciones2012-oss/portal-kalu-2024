@@ -192,23 +192,13 @@ const SettingsScreen: React.FC = () => {
               </button>
               <button
                type="button"
-               onClick={() => setConfig({...config, estado_portal: 'abierto'})}
-               className={cn(
-                 "px-6 py-3 rounded-xl text-xs font-black tracking-widest transition-all",
-                 config.estado_portal === 'abierto' ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20" : "bg-white/5 text-gray-500 hover:bg-white/10"
-               )}
-              >
-                FORZAR ABIERTO
-              </button>
-              <button
-               type="button"
                onClick={() => setConfig({...config, estado_portal: 'cerrado'})}
                className={cn(
                  "px-6 py-3 rounded-xl text-xs font-black tracking-widest transition-all",
                  config.estado_portal === 'cerrado' ? "bg-red-500 text-white shadow-lg shadow-red-500/20" : "bg-white/5 text-gray-500 hover:bg-white/10"
                )}
               >
-                FORZAR CERRADO
+                MANTENIMIENTO (Forzar Cierre)
               </button>
             </div>
          </div>

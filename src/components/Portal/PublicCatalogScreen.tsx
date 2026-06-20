@@ -48,6 +48,18 @@ const PublicCatalogScreen: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('TODOS');
   const [portalFueraDeServicio, setPortalFueraDeServicio] = useState(false);
+  const [estadoPortalVal, setEstadoPortalVal] = useState('automatico');
+
+  // Dynamic time check
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (estadoPortalVal === 'automatico') {
+        const hour = new Date().getHours();
+        setPortalFueraDeServicio(hour < 6 || hour >= 18);
+      }
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [estadoPortalVal]);
 
   
   // Carrito de compras local
@@ -192,21 +204,16 @@ const PublicCatalogScreen: React.FC = () => {
       const globalConfig = data.find((c: any) => c.id === 'global');
       let outOfService = false;
       const estado = globalConfig?.estado_portal || 'automatico';
+      setEstadoPortalVal(estado);
 
-      if (estado === 'cerrado' || globalConfig?.portal_fuera_servicio === true) {
-        outOfService = true;
-      } else if (estado === 'abierto') {
+      if (estado === 'abierto') {
         outOfService = false;
+      } else if (estado === 'cerrado') {
+        outOfService = true;
       } else {
-        // Modo automático: Cerrado hasta el martes 16 a las 6:00 AM
-        const now = new Date();
-        const reopenDate = new Date(2026, 5, 16, 6, 0, 0); // Mes 5 = Junio
-        if (now < reopenDate) {
-          outOfService = true;
-        } else {
-          const hour = now.getHours();
-          outOfService = (hour < 6 || hour >= 18);
-        }
+        // Modo automático: Abierto solo de 6:00 AM a 6:00 PM (18:00)
+        const hour = new Date().getHours();
+        outOfService = (hour < 6 || hour >= 18);
       }
       
       setPortalFueraDeServicio(outOfService);
@@ -530,7 +537,7 @@ Estatus: Pendiente por verificar/entregar
     setShowAuthModal(true);
   };
 
-  if (portalFueraDeServicio && (!user || user.role !== 'admin')) {
+  if (portalFueraDeServicio) {
     return (
       <div 
         className="min-h-screen text-slate-100 font-sans flex flex-col items-center justify-center p-4 text-center"
@@ -549,13 +556,19 @@ Estatus: Pendiente por verificar/entregar
           Nuestro portal de compras se encuentra cerrado por mantenimiento y mejoras.
         </p>
         <p className="text-[#3498db] font-bold mt-2">
-          Estaremos de vuelta el martes 16 a las 6:00 AM.
+          El horario de atención es de 6:00 AM a 6:00 PM.
         </p>
         <button 
           onClick={() => window.location.reload()}
           className="mt-8 px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl font-bold transition-all text-sm uppercase tracking-widest"
         >
           Actualizar Página
+        </button>
+        <button 
+          onClick={() => navigate('/login')}
+          className="mt-12 text-xs text-white/30 hover:text-white/60 transition-all font-medium uppercase tracking-widest"
+        >
+          Acceso Staff
         </button>
       </div>
     );

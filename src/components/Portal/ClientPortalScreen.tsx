@@ -61,6 +61,18 @@ const ClientPortal: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('TODOS');
   const [portalFueraDeServicio, setPortalFueraDeServicio] = useState(false);
+  const [estadoPortalVal, setEstadoPortalVal] = useState('automatico');
+
+  // Dynamic time check
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (estadoPortalVal === 'automatico') {
+        const hour = new Date().getHours();
+        setPortalFueraDeServicio(hour < 6 || hour >= 18);
+      }
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [estadoPortalVal]);
   
   // Carrito de compras compartido
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -373,20 +385,16 @@ const ClientPortal: React.FC = () => {
         }
         let outOfService = false;
         const estado = globalConfig.estado_portal || 'automatico';
-        if (estado === 'cerrado' || globalConfig.portal_fuera_servicio === true) {
-          outOfService = true;
-        } else if (estado === 'abierto') {
+        setEstadoPortalVal(estado);
+        
+        if (estado === 'abierto') {
           outOfService = false;
+        } else if (estado === 'cerrado') {
+          outOfService = true;
         } else {
-          // Modo automático: Cerrado hasta el martes 16 a las 6:00 AM
-          const now = new Date();
-          const reopenDate = new Date(2026, 5, 16, 6, 0, 0); // Mes 5 = Junio
-          if (now < reopenDate) {
-            outOfService = true;
-          } else {
-            const hour = now.getHours();
-            outOfService = (hour < 6 || hour >= 18);
-          }
+          // Modo automático: Abierto solo de 6:00 AM a 6:00 PM (18:00)
+          const hour = new Date().getHours();
+          outOfService = (hour < 6 || hour >= 18);
         }
         setPortalFueraDeServicio(outOfService);
       }
@@ -451,7 +459,7 @@ const ClientPortal: React.FC = () => {
     );
   }
 
-  if (portalFueraDeServicio && (!user || user.role !== 'admin')) {
+  if (portalFueraDeServicio) {
     return (
       <div 
         className="min-h-screen text-slate-100 font-sans flex flex-col items-center justify-center p-4 text-center"
@@ -470,7 +478,7 @@ const ClientPortal: React.FC = () => {
           Nuestro portal de clientes se encuentra cerrado por mantenimiento y mejoras.
         </p>
         <p className="text-[#3498db] font-bold mt-2">
-          Estaremos de vuelta el martes 16 a las 6:00 AM.
+          El horario de atención es de 6:00 AM a 6:00 PM.
         </p>
         <button 
           onClick={handleLogout}

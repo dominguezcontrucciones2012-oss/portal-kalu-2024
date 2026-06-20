@@ -3,6 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
+import multer from "multer";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,22 +17,28 @@ async function startServer() {
 
   // API routes
 
-  app.post("/api/upload-video", (req, res) => {
-    try {
-      const { file, filename } = req.body;
-      if (!file || !filename) {
-        return res.status(400).json({ error: 'Faltan datos de archivo' });
-      }
-      const base64Data = file.replace(/^data:video\/[^;]+;base64,/, "");
-      const buffer = Buffer.from(base64Data, 'base64');
+  // Configurar multer para subida de archivos
+  const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
       const publicDir = path.resolve(process.cwd(), 'public');
       if (!fs.existsSync(publicDir)) {
         fs.mkdirSync(publicDir, { recursive: true });
       }
-      const ext = path.extname(filename) || '.mp4';
-      const targetPath = path.join(publicDir, `propaganda_video${ext}`);
-      fs.writeFileSync(targetPath, buffer);
-      res.json({ url: `/propaganda_video${ext}` });
+      cb(null, publicDir);
+    },
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname) || '.mp4';
+      cb(null, `propaganda_video${ext}`);
+    }
+  });
+  const upload = multer({ storage });
+
+  app.post("/api/upload-video", upload.single('video'), (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No se recibió ningún archivo de video.' });
+      }
+      res.json({ url: `/${req.file.filename}` });
     } catch (err: any) {
       res.status(500).json({ error: 'Error al guardar el archivo', details: err.message });
     }
