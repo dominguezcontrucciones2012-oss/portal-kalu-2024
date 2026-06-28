@@ -13,7 +13,7 @@ export async function askKaluAI(query: string, context?: any) {
     return "Hola! Soy Kalu-IA. Actualmente estoy en modo de demostración porque no se ha configurado una clave de API de Gemini real. Una vez configurada, podré analizar tu inventario y ventas en tiempo real para darte consejos estratégicos.";
   }
 
-  const modelName = "gemini-1.5-flash";
+  const modelName = "gemini-2.5-flash";
   
   const systemInstruction = `
     Eres Kalu-IA, el asistente de inteligencia de mercado del sistema administrativo KALUNEVA2024.

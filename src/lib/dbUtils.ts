@@ -15,7 +15,44 @@ import {
   orderBy,
   limit
 } from 'firebase/firestore';
-import { db, isMock } from './firebase';
+import { db, isMock, storage } from './firebase';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
+
+const uploadBase64IfPresent = async (dataObj: any) => {
+  if (isMock) return dataObj;
+  const newData = { ...dataObj };
+  try {
+    if (typeof newData.capture_base64 === 'string' && newData.capture_base64.startsWith('data:image')) {
+      const filename = `captures/cap_${Date.now()}_${Math.random().toString(36).substring(7)}.webp`;
+      const storageRef = ref(storage, filename);
+      const metadata = { contentType: 'image/webp' };
+      await uploadString(storageRef, newData.capture_base64, 'data_url', metadata);
+      newData.capture_base64 = await getDownloadURL(storageRef);
+      console.log('✅ capture_base64 subido a Storage:', newData.capture_base64.substring(0, 80));
+    }
+    if (Array.isArray(newData.captures_pago)) {
+      const newCaptures: string[] = [];
+      for (let i = 0; i < newData.captures_pago.length; i++) {
+        const item = newData.captures_pago[i];
+        if (typeof item === 'string' && item.startsWith('data:image')) {
+          const filename = `captures/cap_${Date.now()}_${i}_${Math.random().toString(36).substring(7)}.webp`;
+          const storageRef = ref(storage, filename);
+          const metadata = { contentType: 'image/webp' };
+          await uploadString(storageRef, item, 'data_url', metadata);
+          const url = await getDownloadURL(storageRef);
+          console.log('✅ captures_pago[' + i + '] subido a Storage:', url.substring(0, 80));
+          newCaptures.push(url);
+        } else {
+          newCaptures.push(item);
+        }
+      }
+      newData.captures_pago = newCaptures;
+    }
+  } catch (e: any) {
+    console.error('❌ Error subiendo imagen a Storage:', e?.code || e?.message || e);
+  }
+  return newData;
+};
 import { MOCK_PRODUCTS, MOCK_CLIENTS, MOCK_SALES } from '../data/mockData';
 
 // Local storage keys
@@ -198,6 +235,7 @@ export const createClient = async (clientData: any) => {
         role: 'cliente', 
         pin: clientData.pin || lastFour,
         cedula: clientData.cedula,
+        telefono: clientData.telefono || '',
         clientId: newId
       };
       
@@ -236,6 +274,7 @@ export const createClient = async (clientData: any) => {
     pin: clientData.pin || lastFour, // Clave son los últimos 4 dígitos o el pin personalizado
     cedula: clientData.cedula,
     email: clientData.email || null,
+    telefono: clientData.telefono || '',
     clientId: docRef.id,
     requirePinChange: clientData.pin ? false : true, // Si establecen su propio pin, no requieren cambiarlo obligatoriamente
     createdAt: serverTimestamp()
@@ -372,8 +411,9 @@ export const createSale = async (saleData: any) => {
   }
 
   const salesRef = collection(db, 'sales');
+  const finalSaleData = await uploadBase64IfPresent(saleData);
   const docRef = await addDoc(salesRef, {
-    ...saleData,
+    ...finalSaleData,
     createdAt: serverTimestamp()
   });
 
@@ -422,8 +462,9 @@ export const addDocument = async (collectionName: string, data: any) => {
   }
 
   const colRef = collection(db, collectionName);
+  const finalData = await uploadBase64IfPresent(data);
   const docRef = await addDoc(colRef, {
-    ...data,
+    ...finalData,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   });
@@ -475,8 +516,9 @@ export const updateDocument = async (collectionName: string, id: string, data: a
   }
 
   const docRef = doc(db, collectionName, id);
+  const finalData = await uploadBase64IfPresent(data);
   await updateDoc(docRef, {
-    ...data,
+    ...finalData,
     updatedAt: serverTimestamp()
   });
 };

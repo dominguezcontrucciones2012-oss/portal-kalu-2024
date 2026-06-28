@@ -9,7 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
-    "cajero": "node cajero.js"
+    "cajero": "node cajero.js",
+    "webhook": "lt --port 3001"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

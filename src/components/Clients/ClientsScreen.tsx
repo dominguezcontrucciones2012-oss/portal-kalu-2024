@@ -114,11 +114,12 @@ const ClientsScreen: React.FC = () => {
         email: editingClient.email || '',
         direccion: editingClient.direccion || ''
       });
-      // Also update the users document to ensure login works if cedula changes
+      // Also update the users document to ensure login works if cedula changes, and phone stays synced
       await updateDocument('users', editingClient.id, {
         cedula: editingClient.cedula,
         username: editingClient.cedula,
-        email: editingClient.email || ''
+        email: editingClient.email || '',
+        telefono: editingClient.telefono || ''
       }).catch(err => {
         console.warn("User document not updated (might not exist yet):", err);
       });
@@ -151,10 +152,13 @@ const ClientsScreen: React.FC = () => {
     }
   };
 
-  const handleToggleRepartidor = async (clientId: string, currentRole: string) => {
+  const handleToggleRepartidor = async (client: Client, currentRole: string) => {
     try {
       const newRole = currentRole === 'repartidor' ? 'cliente' : 'repartidor';
-      await updateDocument('users', clientId, { role: newRole });
+      await updateDocument('users', client.id, { 
+        role: newRole,
+        telefono: client.telefono || ''
+      });
     } catch (e) {
       console.error("Error al cambiar rol:", e);
       alert("Error al actualizar rol del usuario.");
@@ -265,7 +269,7 @@ const ClientsScreen: React.FC = () => {
                 
                 {userDoc && (
                   <button 
-                    onClick={(e) => { e.stopPropagation(); handleToggleRepartidor(client.id, userDoc.role); }}
+                    onClick={(e) => { e.stopPropagation(); handleToggleRepartidor(client, userDoc.role); }}
                     className={cn(
                       "w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all mt-2",
                       isRepartidor 

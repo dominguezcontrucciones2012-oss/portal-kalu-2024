@@ -1,6 +1,12 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    // Capturas de pago: cualquiera puede leer y escribir (sin autenticación requerida)
+    match /captures/{filename} {
+      allow read: if true;
+      allow write: if request.resource.size < 15 * 1024 * 1024;
+    }
+    // Resto del bucket
     match /{allPaths=**} {
       allow read: if true;
       allow write: if request.resource.size < 30 * 1024 * 1024
