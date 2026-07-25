@@ -1,0 +1,63 @@
+[
+  {
+    "id": "u1",
+    "username": "Administrador",
+    "role": "admin",
+    "email": "admin@kalu.com",
+    "pin": "9999"
+  },
+  {
+    "id": "u2",
+    "username": "Cajero Principal",
+    "role": "cajero",
+    "email": "cajero@kalu.com",
+    "pin": "0000"
+  },
+  {
+    "id": "u3",
+    "username": "Supervisor",
+    "role": "supervisor",
+    "email": "super@kalu.com",
+    "pin": "1111"
+  },
+  {
+    "id": "c1",
+    "username": "Juan Perez",
+    "role": "cliente",
+    "pin": "1234",
+    "cedula": "V-12345678",
+    "clientId": "c1"
+  },
+  {
+    "id": "c2",
+    "username": "Maria Rodriguez",
+    "role": "cliente",
+    "pin": "4321",
+    "cedula": "V-87654321",
+    "clientId": "c2"
+  },
+  {
+    "id": "c3",
+    "username": "Pedro Gomez",
+    "role": "cliente",
+    "pin": "3344",
+    "cedula": "V-11223344",
+    "clientId": "c3"
+  },
+  {
+    "id": "c4",
+    "username": "Juan Carlos Domínguez ",
+    "role": "cliente",
+    "pin": "2345",
+    "cedula": "15082352",
+    "clientId": "c4"
+  },
+  {
+    "id": "c5",
+    "username": "Deisy Coromoto corro",
+    "role": "cliente",
+    "pin": "3456",
+    "cedula": "11120033",
+    "clientId": "c5"
+  }
+]

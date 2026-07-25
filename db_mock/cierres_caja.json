@@ -1,0 +1,26 @@
+[
+  {
+    "fecha": "2026-05-26",
+    "monto_bs": 0,
+    "monto_usd": 0,
+    "pago_movil": 2228.1,
+    "transferencia": 2228.1,
+    "biopago": 0,
+    "tarjeta_debito": 0,
+    "tasa_cierre": 530.5,
+    "total_ventas_usd": 4.2,
+    "total_compras_usd": 0,
+    "fiado_dia_usd": 0,
+    "monto_real_usd": 0,
+    "monto_real_bs": 0,
+    "diferencia_usd": 0,
+    "diferencia_bs": 0,
+    "observaciones": "Vueltos entregados: $0.00. ",
+    "cajero_nombre": "Administrador Principal",
+    "monto_apertura_usd": 0,
+    "monto_apertura_bs": 0,
+    "id": "c1_1779761919898",
+    "createdAt": "2026-05-26T02:18:39.898Z",
+    "updatedAt": "2026-05-26T02:18:39.898Z"
+  }
+]

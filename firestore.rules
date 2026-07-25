@@ -1,0 +1,162 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper Functions
+    function isSignedIn() { return request.auth != null; }
+    function getUserData() { 
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) 
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data 
+        : null; 
+    }
+    function hasRole(role) { 
+      let data = getUserData();
+      return isSignedIn() && data != null && data.role == role; 
+    }
+    function getUserClientId() {
+      let data = getUserData();
+      return data != null && 'clientId' in data ? data.clientId : null;
+    }
+    function isMasterAdmin() {
+      return isSignedIn() && request.auth.token.email in [
+        'dominguezcontrucciones2012@gmail.com',
+        'dominguezconstrucciones2012@gmail.com',
+        'domingueconstrucciones@gmail.com',
+        'dominguezconstrucciones@gmail.com'
+      ];
+    }
+    function isStaff() { return isMasterAdmin() || hasRole('admin') || hasRole('dueno') || hasRole('supervisor') || hasRole('cajero') || hasRole('repartidor'); }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    
+    // Validation Helpers
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // User Profiles
+    match /users/{userId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Products
+    match /products/{productId} {
+      allow read: if true;
+      allow create: if isStaff() && isValidProduct(incoming()) && isValidId(productId);
+      allow update: if isSignedIn();
+      allow delete: if hasRole('admin') || hasRole('dueno');
+      
+      function isValidProduct(data) {
+        return data.keys().hasAll(['codigo', 'nombre', 'costo_usd', 'precio_normal_usd', 'stock']) &&
+               data.codigo is string && data.stock >= 0;
+      }
+    }
+
+    // Clients
+    match /clients/{clientId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Antispam (solo escritura desde el backend/admin)
+    match /antispam/{telefono} {
+      allow read, write: if false; // Solo el backend via admin SDK puede leer/escribir esto
+    }
+
+    // Solicitudes de Recuperación de PIN
+    match /recuperaciones/{id} {
+      allow create: if true;
+      allow read: if isStaff();
+    }
+
+    // Sales
+    match /sales/{saleId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Mensajes
+    match /mensajes/{mensajeId} {
+      allow read: if isSignedIn() && (isStaff() || existing().cliente_id == request.auth.uid || existing().cliente_id == getUserClientId());
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (isStaff() || ((existing().cliente_id == request.auth.uid || existing().cliente_id == getUserClientId()) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['leido'])));
+      allow delete: if isStaff();
+    }
+
+    // Auditoria de Inventario
+    match /auditoria_inventario/{auditoriaId} {
+      allow read: if isStaff();
+      allow create: if isSignedIn();
+    }
+
+    // Tasas BCV
+    match /tasas_bcv/{tasaId} {
+      allow read: if true;
+      allow write: if isStaff() && isValidId(tasaId);
+    }
+
+    // Cierres de Caja
+    match /cierres_caja/{cierreId} {
+      allow read: if isStaff();
+      allow write: if isStaff() && isValidId(cierreId);
+    }
+
+    // Movimientos de Productores
+    match /movimientos_productores/{movId} {
+      allow read: if isStaff();
+      allow write: if isStaff() && isValidId(movId);
+    }
+
+    // Cierres de Repartidores
+    match /cierres/{cierreId} {
+      allow read: if isStaff() || (hasRole('repartidor') && existing().repartidor_id == request.auth.uid);
+      allow write: if isStaff() || (hasRole('repartidor') && incoming().repartidor_id == request.auth.uid);
+    }
+
+    // Colecciones de Contabilidad y Operaciones (Acceso completo para Staff)
+    match /compras_mercancia/{id} { allow read, write: if isStaff(); }
+    match /providers/{id} { allow read, write: if isStaff(); }
+    match /ventas_pausadas/{id} { allow read, write: if isStaff(); }
+    match /asientos/{id} { allow read, write: if isStaff(); }
+    match /inventory_audit/{id} { allow read, write: if isStaff(); }
+    match /gastos/{id} { allow read, write: if isStaff(); }
+    match /ingresos_caja/{id} { allow read, write: if isStaff(); }
+    match /retiros_caja/{id} { allow read, write: if isStaff(); }
+    match /pagos_fiados/{id} { allow read, write: if isStaff(); }
+    match /transacciones/{id} { allow read, write: if isStaff(); }
+    match /quejas/{id} { allow read, write: if isStaff(); allow create: if isSignedIn(); }
+    // Sorteos Activos (Tickets)
+    match /sorteos_activos/{id} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow delete: if isStaff();
+    }
+    
+    // Configuración Global
+    match /configuracion/{id} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+    
+    // Debug Logs
+    match /debug_logs/{id} {
+      allow create, read: if true;
+    }
+
+    // Proveedores y Compras
+    match /providers/{id} {
+      allow read, write: if isSignedIn();
+    }
+    match /compras_mercancia/{id} {
+      allow read, write: if isSignedIn();
+    }
+    match /inventory_audit/{id} {
+      allow read, write: if isSignedIn();
+    }
+    match /gastos/{id} {
+      allow read, write: if isSignedIn();
+    }
+  }
+}

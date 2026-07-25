@@ -1,0 +1,1 @@
+exports.getUserRole = functions.https.onRequest(async (req, res) = try { const uid = req.query.uid; if (!uid) return res.status(400).send('No uid'); const doc = await admin.firestore().collection('users').doc(uid).get(); if (!doc.exists) return res.status(404).send('Not found'); res.json({ role: doc.data().role 

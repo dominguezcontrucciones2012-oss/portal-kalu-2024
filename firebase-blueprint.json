@@ -1,0 +1,79 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account information and roles",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "dueno", "supervisor", "cajero", "cliente", "productor"] },
+        "email": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "role"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Inventory product item",
+      "type": "object",
+      "properties": {
+        "codigo": { "type": "string" },
+        "nombre": { "type": "string" },
+        "categoria": { "type": "string" },
+        "costo_usd": { "type": "number" },
+        "precio_normal_usd": { "type": "number" },
+        "precio_oferta_usd": { "type": "number" },
+        "stock": { "type": "number" },
+        "stock_minimo": { "type": "number" },
+        "unidad_medida": { "type": "string" }
+      },
+      "required": ["codigo", "nombre", "costo_usd", "precio_normal_usd", "stock"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Customer information and debt",
+      "type": "object",
+      "properties": {
+        "nombre": { "type": "string" },
+        "cedula": { "type": "string" },
+        "telefono": { "type": "string" },
+        "saldo_usd": { "type": "number" },
+        "puntos": { "type": "number" }
+      },
+      "required": ["nombre", "cedula"]
+    },
+    "Sale": {
+      "title": "Sale Record",
+      "description": "Transaction record",
+      "type": "object",
+      "properties": {
+        "fecha": { "type": "string", "format": "date-time" },
+        "clienteId": { "type": "string" },
+        "total_usd": { "type": "number" },
+        "tasa_bcv": { "type": "number" },
+        "es_fiado": { "type": "boolean" },
+        "detalles": { "type": "array" }
+      },
+      "required": ["fecha", "total_usd", "tasa_bcv"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Private user profiles"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Main inventory"
+    },
+    "/clients/{clientId}": {
+      "schema": "Client",
+      "description": "Customer list"
+    },
+    "/sales/{saleId}": {
+      "schema": "Sale",
+      "description": "Sales history"
+    }
+  }
+}

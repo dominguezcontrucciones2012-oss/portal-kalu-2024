@@ -1,0 +1,54 @@
+[
+  {
+    "id": "c1",
+    "nombre": "Juan Perez",
+    "cedula": "V-12345678",
+    "telefono": "0424-5551122",
+    "direccion": "Calle Principal",
+    "saldo_usd": 0,
+    "puntos": 150,
+    "role": "cliente",
+    "updatedAt": "2026-05-25T23:42:39.956Z"
+  },
+  {
+    "id": "c2",
+    "nombre": "Maria Rodriguez",
+    "cedula": "V-87654321",
+    "telefono": "0412-9993344",
+    "direccion": "Avenida 2",
+    "saldo_usd": 0,
+    "puntos": 215,
+    "role": "cliente"
+  },
+  {
+    "id": "c3",
+    "nombre": "Pedro Gomez",
+    "cedula": "V-11223344",
+    "telefono": "0416-1112233",
+    "direccion": "Calle 3",
+    "saldo_usd": 0,
+    "puntos": 45,
+    "role": "cliente",
+    "updatedAt": "2026-05-25T23:42:32.139Z"
+  },
+  {
+    "id": "c4",
+    "nombre": "Juan Carlos Domínguez ",
+    "cedula": "15082352",
+    "telefono": "04243068286",
+    "direccion": "Carretera nacional lomas del pica pica ",
+    "saldo_usd": 8.5,
+    "puntos": 17,
+    "updatedAt": "2026-05-27T13:20:47.644Z"
+  },
+  {
+    "id": "c5",
+    "nombre": "Deisy Coromoto corro",
+    "cedula": "11120033",
+    "telefono": "04125782054",
+    "direccion": "Carretera nacional paripan",
+    "saldo_usd": 0,
+    "puntos": 55,
+    "updatedAt": "2026-05-27T03:25:00.250Z"
+  }
+]

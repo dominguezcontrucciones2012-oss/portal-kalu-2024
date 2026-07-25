@@ -1,0 +1,14 @@
+[
+  {
+    "cliente_id": "c5",
+    "cliente_nombre": "Deisy Coromoto corro",
+    "cliente_cedula": "11120033",
+    "titulo": "Problema",
+    "mensaje": "El quiere",
+    "fecha": "2026-05-26T13:48:37.259Z",
+    "leido": false,
+    "id": "q1_1779803317324",
+    "createdAt": "2026-05-26T13:48:37.324Z",
+    "updatedAt": "2026-05-26T13:48:37.324Z"
+  }
+]

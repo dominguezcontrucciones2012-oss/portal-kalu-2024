@@ -1,0 +1,31 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Funciones de ayuda de seguridad
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isStaff() {
+      return isSignedIn() && 
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role in ['admin', 'dueno', 'supervisor', 'cajero'];
+    }
+
+    // Capturas de pago: solo imágenes de hasta 5MB subidas por usuarios autenticados (incluyendo anónimos)
+    match /captures/{filename} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() 
+                   && request.resource.size < 5 * 1024 * 1024 
+                   && request.resource.contentType.matches('image/.*');
+    }
+    
+    // Resto del bucket (videos de publicidad): solo videos de hasta 30MB subidos por el staff
+    match /{allPaths=**} {
+      allow read: if true;
+      allow write: if isStaff() 
+                   && request.resource.size < 30 * 1024 * 1024
+                   && request.resource.contentType.matches('video/.*');
+    }
+  }
+}

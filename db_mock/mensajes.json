@@ -1,0 +1,192 @@
+[
+  {
+    "cliente_id": "c3",
+    "fecha": "2026-05-25T23:42:31.946Z",
+    "titulo": "✅ Abono Confirmado",
+    "contenido": "Hemos recibido tu abono de $8.75 (Efectivo Dólares ($)). Tu saldo deudor actual es de $0.00. ¡Gracias por tu pago!",
+    "leido": false,
+    "id": "m1_1779752552311",
+    "createdAt": "2026-05-25T23:42:32.311Z",
+    "updatedAt": "2026-05-25T23:42:32.311Z"
+  },
+  {
+    "cliente_id": "c1",
+    "fecha": "2026-05-25T23:42:39.823Z",
+    "titulo": "✅ Abono Confirmado",
+    "contenido": "Hemos recibido tu abono de $25.50 (Efectivo Dólares ($)). Tu saldo deudor actual es de $0.00. ¡Gracias por tu pago!",
+    "leido": false,
+    "id": "m2_1779752559987",
+    "createdAt": "2026-05-25T23:42:39.987Z",
+    "updatedAt": "2026-05-25T23:42:39.987Z"
+  },
+  {
+    "cliente_id": "c5",
+    "fecha": "2026-05-26T02:06:42.381Z",
+    "titulo": "📦 Pedido Web Entregado",
+    "contenido": "Tu pedido web #1009 por un total de $4.20 ha sido validado y entregado. ¡Gracias por preferirnos!",
+    "leido": false,
+    "id": "m3_1779761202467",
+    "createdAt": "2026-05-26T02:06:42.467Z",
+    "updatedAt": "2026-05-26T02:06:42.467Z"
+  },
+  {
+    "cliente_id": "c5",
+    "fecha": "2026-05-26T02:44:08.862Z",
+    "titulo": "📱 Reporte de Pago Recibido",
+    "contenido": "Hemos recibido tu reporte de pago de $12.60. Está en proceso de validación en caja.",
+    "leido": false,
+    "id": "m4_1779763469715",
+    "createdAt": "2026-05-26T02:44:29.715Z",
+    "updatedAt": "2026-05-26T02:44:29.715Z"
+  },
+  {
+    "cliente_id": "c5",
+    "fecha": "2026-05-26T13:27:06.058Z",
+    "titulo": "❌ Pedido Web Cancelado",
+    "contenido": "Tu pedido #1010 ha sido descartado de la caja por el personal de tienda. Si ya realizaste un pago, por favor contacta al cajero.",
+    "leido": false,
+    "id": "m5_1779802026370",
+    "createdAt": "2026-05-26T13:27:06.370Z",
+    "updatedAt": "2026-05-26T13:27:06.370Z"
+  },
+  {
+    "cliente_id": "c5",
+    "fecha": "2026-05-26T13:27:19.074Z",
+    "titulo": "❌ Pedido Web Cancelado",
+    "contenido": "Tu pedido #1011 ha sido descartado de la caja por el personal de tienda. Si ya realizaste un pago, por favor contacta al cajero.",
+    "leido": false,
+    "id": "m6_1779802040275",
+    "createdAt": "2026-05-26T13:27:20.275Z",
+    "updatedAt": "2026-05-26T13:27:20.275Z"
+  },
+  {
+    "cliente_id": "c5",
+    "fecha": "2026-05-26T13:51:47.458Z",
+    "titulo": "📦 Pedido Web Entregado",
+    "contenido": "Tu pedido web #1010 por un total de $8.40 ha sido validado y entregado. ¡Gracias por preferirnos!",
+    "leido": false,
+    "id": "m7_1779803507550",
+    "createdAt": "2026-05-26T13:51:47.550Z",
+    "updatedAt": "2026-05-26T13:51:47.550Z"
+  },
+  {
+    "cliente_id": "c5",
+    "fecha": "2026-05-26T21:21:54.484Z",
+    "titulo": "📦 Pedido Web Entregado",
+    "contenido": "Tu pedido web #1011 por un total de $8.40 ha sido entregado y cargado en tu saldo deudor.",
+    "leido": false,
+    "id": "m8_1779830514762",
+    "createdAt": "2026-05-26T21:21:54.762Z",
+    "updatedAt": "2026-05-26T21:21:54.762Z"
+  },
+  {
+    "cliente_id": "c5",
+    "fecha": "2026-05-26T21:24:14.293Z",
+    "titulo": "📱 Reporte de Pago Recibido",
+    "contenido": "Hemos recibido tu reporte de pago de $21.00. Está en proceso de validación en caja.",
+    "leido": false,
+    "id": "m9_1779830656565",
+    "createdAt": "2026-05-26T21:24:16.565Z",
+    "updatedAt": "2026-05-26T21:24:16.565Z"
+  },
+  {
+    "cliente_id": "c5",
+    "fecha": "2026-05-26T21:40:53.264Z",
+    "titulo": "✅ Abono Confirmado",
+    "contenido": "Hemos recibido tu abono de $21.00 (Pago Móvil (Bs)). Tu saldo deudor actual es de $0.00. ¡Gracias por tu pago!",
+    "leido": false,
+    "id": "m10_1779831653890",
+    "createdAt": "2026-05-26T21:40:53.890Z",
+    "updatedAt": "2026-05-26T21:40:53.890Z"
+  },
+  {
+    "cliente_id": "c5",
+    "fecha": "2026-05-27T02:38:03.377Z",
+    "titulo": "📦 Pedido Web Entregado",
+    "contenido": "Tu pedido web #1012 por un total de $21.00 ha sido entregado y cargado en tu saldo deudor.",
+    "leido": false,
+    "id": "m11_1779849484485",
+    "createdAt": "2026-05-27T02:38:04.485Z",
+    "updatedAt": "2026-05-27T02:38:04.485Z"
+  },
+  {
+    "cliente_id": "c5",
+    "fecha": "2026-05-27T02:50:33.950Z",
+    "titulo": "📦 Pedido Web Entregado",
+    "contenido": "Tu pedido web #1014 por un total de $8.40 ha sido entregado y cargado en tu saldo deudor.",
+    "leido": false,
+    "id": "m12_1779850234043",
+    "createdAt": "2026-05-27T02:50:34.043Z",
+    "updatedAt": "2026-05-27T02:50:34.043Z"
+  },
+  {
+    "cliente_id": "c5",
+    "fecha": "2026-05-27T02:51:32.596Z",
+    "titulo": "📱 Reporte de Pago Recibido",
+    "contenido": "Hemos recibido tu reporte de pago de $8.40. Está en proceso de validación en caja.",
+    "leido": false,
+    "id": "m13_1779850817106",
+    "createdAt": "2026-05-27T03:00:17.106Z",
+    "updatedAt": "2026-05-27T03:00:17.106Z"
+  },
+  {
+    "cliente_id": "c5",
+    "fecha": "2026-05-27T03:09:09.741Z",
+    "titulo": "📦 Pedido Web Entregado",
+    "contenido": "Tu pedido web #1015 por un total de $8.40 ha sido entregado y cargado en tu saldo deudor.",
+    "leido": false,
+    "id": "m14_1779851349790",
+    "createdAt": "2026-05-27T03:09:09.790Z",
+    "updatedAt": "2026-05-27T03:09:09.790Z"
+  },
+  {
+    "cliente_id": "c5",
+    "fecha": "2026-05-27T03:21:01.658Z",
+    "titulo": "📄 Factura Digital #1016",
+    "contenido": "📄 FACTURA DIGITAL #1016\nFecha: 26/5/2026 11:21:01 p.m.\nCliente: Deisy Coromoto corro\nCédula: 11120033\n----------------------------------\n1x Harina PAN 1kg - $1.15\n1x Tripa de Moto 2.75-18 - $8.50\n----------------------------------\nTotal USD: $9.65\nTasa BCV: 535.39 Bs/USD\nTotal en Bolívares: Bs. 5166.51\n----------------------------------\nMétodo de Pago: Pagar al Recibir (Fiado / Efectivo)\nTipo de Entrega: Delivery\nEstatus: Pendiente por verificar/entregar\n\n¡Gracias por su compra en KALUNEVA2024!",
+    "leido": false,
+    "id": "m15_1779852061750",
+    "createdAt": "2026-05-27T03:21:01.750Z",
+    "updatedAt": "2026-05-27T03:21:01.750Z"
+  },
+  {
+    "cliente_id": "c5",
+    "fecha": "2026-05-27T03:21:36.330Z",
+    "titulo": "📦 Pedido Web Entregado",
+    "contenido": "Tu pedido web #1016 por un total de $9.65 ha sido entregado y cargado en tu saldo deudor.",
+    "leido": false,
+    "id": "m16_1779852096433",
+    "createdAt": "2026-05-27T03:21:36.433Z",
+    "updatedAt": "2026-05-27T03:21:36.433Z"
+  },
+  {
+    "cliente_id": "c5",
+    "fecha": "2026-05-27T03:22:52.929Z",
+    "titulo": "📱 Reporte de Pago Recibido",
+    "contenido": "Hemos recibido tu reporte de pago de $9.65. Está en proceso de validación en caja.",
+    "leido": false,
+    "id": "m17_1779852173406",
+    "createdAt": "2026-05-27T03:22:53.406Z",
+    "updatedAt": "2026-05-27T03:22:53.406Z"
+  },
+  {
+    "cliente_id": "c5",
+    "fecha": "2026-05-27T03:25:00.529Z",
+    "titulo": "📦 Pedido Web Entregado",
+    "contenido": "Tu pedido web #1017 por un total de $9.65 ha sido entregado y cargado en tu saldo deudor.",
+    "leido": false,
+    "id": "m18_1779852300585",
+    "createdAt": "2026-05-27T03:25:00.585Z",
+    "updatedAt": "2026-05-27T03:25:00.585Z"
+  },
+  {
+    "cliente_id": "c4",
+    "fecha": "2026-05-27T13:20:47.754Z",
+    "titulo": "⚠️ Compra a Crédito Registrada",
+    "contenido": "Se ha registrado una compra a crédito en tienda por un total de $8.50. Saldo restante pendiente: $8.50.",
+    "leido": false,
+    "id": "m19_1779888047772",
+    "createdAt": "2026-05-27T13:20:47.772Z",
+    "updatedAt": "2026-05-27T13:20:47.772Z"
+  }
+]
