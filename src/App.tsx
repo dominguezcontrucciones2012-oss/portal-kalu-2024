@@ -5,14 +5,17 @@ import Layout from './components/layout/Layout';
 import { ToastProvider } from './contexts/ToastProvider';
 import ErrorBoundary from './components/common/ErrorBoundary';
 
-// Helper for ChunkLoadError (deployment cache issues)
 const lazyRetry = (componentImport: () => Promise<any>) => {
   return lazy(async () => {
     const hasRefreshed = JSON.parse(
       window.sessionStorage.getItem('retry-lazy-refreshed') || 'false'
     );
     try {
-      const component = await componentImport();
+      // Add a 15-second timeout to prevent infinite hanging on bad networks
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Chunk load timeout')), 15000);
+      });
+      const component = await Promise.race([componentImport(), timeoutPromise]);
       window.sessionStorage.setItem('retry-lazy-refreshed', 'false');
       return component;
     } catch (error) {
