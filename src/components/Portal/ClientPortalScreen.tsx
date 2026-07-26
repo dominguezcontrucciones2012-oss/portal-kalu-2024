@@ -912,8 +912,8 @@ Estatus: Pendiente por verificar/entregar
   });
 
   const activeOrders = mySales.filter(sale => {
-    const status = sale.status_pedido || 'entregado';
-    return status !== 'entregado' && status !== 'rechazado';
+    const activeStatuses = ['pendiente', 'verificando_pago', 'listo', 'en_camino', 'efectivo_en_ruta'];
+    return activeStatuses.includes(sale.status_pedido as string);
   });
   // Se muestran todas las compras en el historial (sin límite de 7 días)
   const allRecentOrders = mySales;
