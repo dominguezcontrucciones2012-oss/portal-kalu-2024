@@ -138,7 +138,69 @@ async function descargarAudioWhatsApp(mediaId) {
         return null;
     }
 }
+async function descargarYSubirImagenFirebase(mediaId, saleId) {
+    try {
+        // 1. Obtener la URL del archivo
+        const resMedia = await axios({
+            method: 'GET',
+            url: `https://graph.facebook.com/v21.0/${mediaId}`,
+            headers: { Authorization: `Bearer ${META_TOKEN}` }
+        });
+        const url = resMedia.data.url;
+        const mimeType = resMedia.data.mime_type || "image/jpeg";
+        const extension = mimeType.split('/')[1] || 'jpg';
 
+        // 2. Descargar el archivo binario
+        const resFile = await axios({
+            method: 'GET',
+            url: url,
+            headers: { Authorization: `Bearer ${META_TOKEN}` },
+            responseType: 'arraybuffer'
+        });
+
+        // 3. Subir a Firebase Storage
+        const bucket = admin.storage().bucket("kalu-queso-sanjuam.appspot.com");
+        const filePath = `captures/sales/${saleId}_${Date.now()}.${extension}`;
+        const file = bucket.file(filePath);
+
+        await file.save(resFile.data, {
+            metadata: { contentType: mimeType },
+            public: true
+        });
+
+        const publicUrl = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
+        return publicUrl;
+    } catch (e) {
+        console.error("Error descargando/subiendo imagen de WhatsApp:", e.message);
+        return null;
+    }
+}
+
+async function enviarImagenPorId(to, mediaId, captionText = "") {
+    try {
+        await axios({
+            method: "POST",
+            url: `https://graph.facebook.com/v21.0/${META_PHONE_ID}/messages`,
+            headers: {
+                Authorization: `Bearer ${META_TOKEN}`,
+                "Content-Type": "application/json"
+            },
+            data: {
+                messaging_product: "whatsapp",
+                to: to,
+                type: "image",
+                image: {
+                    id: mediaId,
+                    caption: captionText
+                }
+            }
+        });
+        return true;
+    } catch (err) {
+        console.error("❌ Error enviando imagen por ID:", err?.response?.data || err.message);
+        return false;
+    }
+}
 async function enviarPlantillaAvisoGeneral(to, textoVariable) {
     if (!textoVariable) return false;
     try {
@@ -606,6 +668,7 @@ app.post("*", async (req, res) => {
 
             let textBody = "";
             let audioData = null;
+            let imageData = null;
 
             if (message.type === "text") {
                 textBody = message.text.body.toUpperCase().trim();
@@ -614,11 +677,14 @@ app.post("*", async (req, res) => {
             } else if (message.type === "audio") {
                 console.log(`🎤 Nota de voz recibida de ${from}, media ID: ${message.audio.id}`);
                 audioData = await descargarAudioWhatsApp(message.audio.id);
+            } else if (message.type === "image") {
+                console.log(`📸 Imagen (capture) recibida de ${from}, media ID: ${message.image.id}`);
+                imageData = message.image.id;
             }
 
-            if (textBody || audioData) {
-                console.log(`💬 Webhook procesando mensaje de ${from}: ${textBody || '[Audio]'}`);
-                await procesarMensajeEntrante(from, textBody, audioData);
+            if (textBody || audioData || imageData) {
+                console.log(`💬 Webhook procesando mensaje de ${from}: ${textBody || (audioData ? '[Audio]' : (imageData ? '[Imagen]' : ''))}`);
+                await procesarMensajeEntrante(from, textBody, audioData, imageData);
             }
         }
         res.status(200).send("EVENT_RECEIVED");
@@ -628,7 +694,7 @@ app.post("*", async (req, res) => {
     }
 });
 
-async function procesarMensajeEntrante(from, body, audioData = null) {
+async function procesarMensajeEntrante(from, body, audioData = null, imageData = null) {
     // ── Verificación Antispam ──────────────────────────────────────────────────
     const spamResult = await checkAntispam(from);
     if (spamResult.bloqueado) {
@@ -639,12 +705,82 @@ async function procesarMensajeEntrante(from, body, audioData = null) {
         } else if (spamResult.cooldownNuevo) {
             await enviarMensajeTexto(from, `⏳ Estás enviando mensajes muy rápido. Por favor espera 2 minutos antes de continuar.`);
         }
-        // Si ya fue notificado anteriormente, simplemente ignorar el mensaje silenciosamente
         return;
     }
     // ─────────────────────────────────────────────────────────────────────────
 
     const esAdmin = from.includes(NUMERO_ADMIN.replace('58', ''));
+
+    // --- MANEJO DE IMÁGENES (CAPTURES) ---
+    if (imageData) {
+        // 1. Confirmar recepción al usuario
+        await enviarMensajeTexto(from, "✅ ¡Capture recibido con éxito! Estamos validando tu pago.");
+
+        try {
+            // 2. Buscar si el teléfono pertenece a un repartidor (o cliente) y cuál es su pedido activo
+            let orderId = 'unknown';
+            let orderData = null;
+            let senderName = 'Desconocido';
+
+            // Buscar en usuarios (repartidores)
+            const usersSnap = await db.collection('users').get();
+            let repartidorId = null;
+            usersSnap.forEach(doc => {
+                const u = doc.data();
+                if (u.telefono && formatearTelefonoWhatsApp(u.telefono) === formatearTelefonoWhatsApp(from)) {
+                    repartidorId = doc.id;
+                    senderName = u.username || u.nombre || 'Repartidor';
+                }
+            });
+
+            // Buscar el último pedido activo
+            const salesSnap = await db.collection('sales')
+                .orderBy('fecha', 'desc')
+                .limit(10)
+                .get();
+
+            for (const doc of salesSnap.docs) {
+                const s = doc.data();
+                if (s.status_pedido !== 'entregado' && s.status_pedido !== 'cancelado') {
+                    // Si encontramos el repartidor, buscamos su pedido asignado
+                    if (repartidorId && s.repartidor_id === repartidorId) {
+                        orderId = doc.id;
+                        orderData = s;
+                        break;
+                    }
+                    // Opcional: si es cliente directo (fiado)
+                    if (s.client_telefono && formatearTelefonoWhatsApp(s.client_telefono) === formatearTelefonoWhatsApp(from)) {
+                        orderId = doc.id;
+                        orderData = s;
+                        break;
+                    }
+                }
+            }
+
+            // 3. Descargar y subir al storage
+            const publicUrl = await descargarYSubirImagenFirebase(imageData, orderId);
+
+            // 4. Asociar a la base de datos
+            if (orderId !== 'unknown' && publicUrl) {
+                const currentCaptures = orderData.captures_pago || [];
+                await db.collection('sales').doc(orderId).update({
+                    captures_pago: [...currentCaptures, publicUrl],
+                    status_pedido: 'verificando_pago'
+                });
+            }
+
+            // 5. Enviar al administrador con el Payload nativo de Imagen de WhatsApp
+            const infoPedido = orderId !== 'unknown' ? `Pedido: #${orderData?.codigo_pedido || orderId.substring(0,8)}` : `Pedido: NO IDENTIFICADO`;
+            const captionMsg = `📸 *NUEVO PAGO RECIBIDO*\nDe: ${senderName} (+${from})\n${infoPedido}\n\nSi es correcto, usa el portal o envía APROBAR_${orderData?.codigo_pedido || 'ID'}`;
+            
+            await enviarImagenPorId(NUMERO_ADMIN, imageData, captionMsg);
+
+        } catch (e) {
+            console.error("Error procesando imagen:", e);
+            await enviarMensajeTexto(NUMERO_ADMIN, `⚠️ Se recibió una foto de +${from} pero hubo un error al procesarla.\nMedia ID: ${imageData}`);
+        }
+        return;
+    }
 
     // --- FLUJO DE BOTONES (APROBAR/RECHAZAR) ---
     if (body.startsWith('APROBAR_PEDIDO_') || body === 'APROBAR') {

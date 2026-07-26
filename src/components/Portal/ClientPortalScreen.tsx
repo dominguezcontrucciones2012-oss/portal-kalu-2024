@@ -126,9 +126,12 @@ const ClientPortal: React.FC = () => {
   const handleLogout = async () => {
     try {
       setUser(null);
+      localStorage.removeItem('kalu_current_user');
       localStorage.removeItem('kalu_remembered_user');
       localStorage.removeItem('kalu_pin_verified');
+      localStorage.removeItem('kalu_bio_last_user_email');
       await auth.signOut();
+      window.location.href = '/';
     } catch (err) {
       console.error(err);
     }
@@ -137,6 +140,7 @@ const ClientPortal: React.FC = () => {
   // Estados de navegación e interfaz
   const [activeTab, setActiveTab] = useState<'inicio' | 'tienda' | 'compras'>('inicio');
   const [searchTerm, setSearchTerm] = useState('');
+  const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
 
   // Profile Update States
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -562,7 +566,7 @@ const ClientPortal: React.FC = () => {
     
     // Usamos Set para valores unicos. Aseguramos no usar toLowerCase() 
     // porque los UIDs de Firebase son sensibles a mayúsculas/minúsculas.
-    const uniqueIds = Array.from(new Set([user?.clientId, user?.id, clientData?.id].filter(Boolean).map(id => String(id).trim())));
+    const uniqueIds = Array.from(new Set([user?.clientId, user?.id, clientData?.id, clientData?.cedula].filter(Boolean).map(id => String(id).trim())));
     
     // subscribeToUserSales usa where('cliente_id', 'in', [...])
     // lo cual pasa la regla de seguridad de Firebase en lugar de pedir toda la coleccion.
@@ -911,16 +915,8 @@ Estatus: Pendiente por verificar/entregar
     const status = sale.status_pedido || 'entregado';
     return status !== 'entregado' && status !== 'rechazado';
   });
-  const allRecentOrders = mySales.filter(sale => {
-    const status = sale.status_pedido || 'entregado';
-    if (status === 'entregado' || status === 'rechazado') {
-      const orderDate = new Date(sale.fecha || sale.createdAt || 0);
-      const diffTime = Math.abs(new Date().getTime() - orderDate.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      return diffDays <= 7;
-    }
-    return true;
-  });
+  // Se muestran todas las compras en el historial (sin límite de 7 días)
+  const allRecentOrders = mySales;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-20 font-sans">
@@ -1171,10 +1167,40 @@ Estatus: Pendiente por verificar/entregar
             </div>
           )}
 
-          {/* Actividad Reciente */}
+          {/* SECCIÓN DE TICKETS DE SORTEO */}
+          {myTickets.length > 0 && (
+            <div className="bg-gradient-to-br from-yellow-500/20 to-orange-500/20 border border-yellow-500/30 p-6 rounded-[2rem] space-y-4 mb-2 relative overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500">
+              <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-yellow-500/30 rounded-full blur-[120px] pointer-events-none" />
+              <div className="relative z-10">
+                <h3 className="text-xl font-black uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-500 flex items-center gap-2 mb-4">
+                  <Trophy className="text-yellow-400" size={24} /> 
+                  Tus Tickets del Sorteo (15 KG Queso)
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {myTickets.map(ticket => (
+                    <div key={ticket.id} className="bg-black/40 border border-yellow-500/20 p-4 rounded-2xl flex items-center gap-4">
+                      <div className="bg-yellow-500/20 p-3 rounded-xl text-yellow-400 shrink-0">
+                        <Ticket size={24} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-gray-400 font-black uppercase tracking-wider leading-none mb-1">TICKET POR COMPRA</p>
+                        <p className="text-lg font-black text-white leading-none"># {ticket.codigo_pedido || 'TICKET'}</p>
+                        <p className="text-[10px] text-gray-500 mt-1">{new Date(ticket.fecha).toLocaleDateString()}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[10px] text-yellow-400/80 font-bold mt-4 leading-relaxed">
+                  ¡Guarda estos tickets! Participas automáticamente en el sorteo semanal de 15 KG de queso. El ganador será anunciado en nuestras redes sociales este fin de semana.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Facturas Pendientes */}
           <div className="space-y-4">
             <div className="flex items-center justify-between px-4">
-              <h3 className="text-sm font-black text-gray-500 uppercase tracking-[0.2em]">Últimas Compras</h3>
+              <h3 className="text-sm font-black text-gray-500 uppercase tracking-[0.2em]">Facturas Pendientes</h3>
               {mySales.length > 3 && (
                 <button onClick={() => setActiveTab('compras')} className="text-xs font-bold text-[#3498db] uppercase tracking-wider">
                   Ver todas
@@ -1185,26 +1211,29 @@ Estatus: Pendiente por verificar/entregar
             {activeOrders.map(sale => (
               <div 
                 key={sale.id} 
-                onClick={() => setActiveTab('compras')}
-                className="bg-white/5 border border-white/10 p-4 rounded-3xl flex flex-col gap-4 group cursor-pointer hover:bg-white/10 transition-colors text-white"
+                className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden text-white"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center text-gray-400">
-                      <ShoppingBag size={20} />
+                {/* Header Compacto */}
+                <div 
+                  onClick={() => setExpandedInvoiceId(expandedInvoiceId === sale.id ? null : sale.id)}
+                  className="flex items-center justify-between p-4 cursor-pointer hover:bg-white/10 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-gray-400 shrink-0">
+                      <ShoppingBag size={18} />
                     </div>
                     <div>
-                      <div className="text-sm font-bold">Factura #{sale.codigo_pedido || sale.id.substring(0, 8)}</div>
-                      <div className="text-[10px] text-gray-500 font-bold uppercase">
+                      <div className="text-sm font-bold leading-tight">#{sale.codigo_pedido || sale.id.substring(0, 8)}</div>
+                      <div className="text-[9px] text-gray-500 font-bold uppercase mt-0.5">
                         {sale.fecha ? new Date(sale.fecha).toLocaleDateString() : 'Pendiente'}
                       </div>
                     </div>
                   </div>
-                  <div className="text-right flex items-center gap-4">
-                    <div>
-                      <div className="text-sm font-black text-[#2ecc71]">{formatCurrency(sale.total_usd)}</div>
+                  <div className="text-right flex items-center gap-3">
+                    <div className="flex flex-col items-end">
+                      <div className="text-sm font-black text-[#2ecc71] leading-tight">{formatCurrency(sale.total_usd)}</div>
                       <span className={cn(
-                        "text-[8px] font-black uppercase px-2 rounded-full border",
+                        "text-[8px] font-black uppercase px-2 py-0.5 rounded-full border mt-1",
                         (sale as any).status_pedido === 'listo'
                           ? "bg-blue-500/20 text-blue-400 border-blue-500/30 animate-pulse"
                           : sale.pagada 
@@ -1216,16 +1245,28 @@ Estatus: Pendiente por verificar/entregar
                           : sale.pagada ? 'Pagada' : 'Pendiente'}
                       </span>
                     </div>
-                    <ChevronRight size={16} className="text-gray-600 group-hover:text-white transition-colors" />
+                    <ChevronRight size={16} className={cn("text-gray-500 transition-transform duration-300", expandedInvoiceId === sale.id ? "rotate-90" : "")} />
                   </div>
                 </div>
-                <OrderStepper status={(sale as any).status_pedido} tipoEntrega={(sale as any).tipo_entrega} />
+
+                {/* Detalle Expandido */}
+                {expandedInvoiceId === sale.id && (
+                  <div className="p-4 border-t border-white/5 bg-black/20">
+                    <OrderStepper status={(sale as any).status_pedido} tipoEntrega={(sale as any).tipo_entrega} />
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); setActiveTab('compras'); }}
+                      className="w-full mt-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest text-center py-2 hover:text-white transition-colors"
+                    >
+                      Ver detalle completo
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
 
             {activeOrders.length === 0 && (
               <div className="text-center py-8 bg-white/5 border border-white/10 border-dashed rounded-3xl text-gray-500 text-xs font-bold">
-                Aún no tienes compras registradas.
+                No tienes facturas pendientes.
               </div>
             )}
           </div>
@@ -1443,36 +1484,6 @@ Estatus: Pendiente por verificar/entregar
             </div>
             <h3 className="text-sm font-black uppercase tracking-widest text-gray-500 shrink-0">Mis Compras</h3>
           </div>
-
-          {/* SECCIÓN DE TICKETS DE SORTEO */}
-          {myTickets.length > 0 && (
-            <div className="bg-gradient-to-br from-yellow-500/20 to-orange-500/20 border border-yellow-500/30 p-6 rounded-[2rem] space-y-4 mb-2 relative overflow-hidden">
-              <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-yellow-500/30 rounded-full blur-[120px] pointer-events-none" />
-              <div className="relative z-10">
-                <h3 className="text-xl font-black uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-500 flex items-center gap-2 mb-4">
-                  <Trophy className="text-yellow-400" size={24} /> 
-                  Tus Tickets del Sorteo (15 KG Queso)
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {myTickets.map(ticket => (
-                    <div key={ticket.id} className="bg-black/40 border border-yellow-500/20 p-4 rounded-2xl flex items-center gap-4">
-                      <div className="bg-yellow-500/20 p-3 rounded-xl text-yellow-400 shrink-0">
-                        <Ticket size={24} />
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-gray-400 font-black uppercase tracking-wider leading-none mb-1">TICKET POR COMPRA</p>
-                        <p className="text-lg font-black text-white leading-none"># {ticket.codigo_pedido || 'TICKET'}</p>
-                        <p className="text-[10px] text-gray-500 mt-1">{new Date(ticket.fecha).toLocaleDateString()}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-[10px] text-yellow-400/80 font-bold mt-4 leading-relaxed">
-                  ¡Guarda estos tickets! Participas automáticamente en el sorteo semanal de 15 KG de queso. El ganador será anunciado en nuestras redes sociales este fin de semana.
-                </p>
-              </div>
-            </div>
-          )}
 
           {/* Lista de facturas completas */}
           <div className="space-y-6">

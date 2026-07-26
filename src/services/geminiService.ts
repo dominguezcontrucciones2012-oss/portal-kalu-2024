@@ -1,11 +1,12 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-const apiKey = typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : (import.meta as any).env.VITE_GEMINI_API_KEY;
+const apiKey = (typeof process !== 'undefined' && process.env.GEMINI_API_KEY) || (import.meta as any).env?.VITE_GEMINI_API_KEY;
 let ai: any = null;
 
 if (apiKey && apiKey !== "COPIA_TU_API_KEY_AQUI") {
   ai = new GoogleGenAI({ apiKey });
 }
+
 
 
 export async function askKaluAI(query: string, context?: any) {
@@ -48,14 +49,27 @@ export async function askKaluAI(query: string, context?: any) {
 
 
 
-export async function scanInvoiceIA(base64Image: string) {
-  const modelName = "gemini-1.5-flash";
+export async function scanInvoiceIA(base64Image: string, tasaBcv: number = 1, inventoryContext: string = "") {
+  const modelName = "gemini-2.5-flash";
   
   const systemInstruction = `
     Eres un experto en digitalización de facturas de proveedores.
-    Extrae la lista de productos de la imagen proporcionada.
-    Formato de salida requerido: JSON ARRAY con objetos { nombre, cantidad, costo }.
-    Asegúrate de que los nombres estén en MAYÚSCULAS y los números sean válidos.
+    TASA DE CAMBIO ACTUAL: 1 USD = ${tasaBcv} VES (Bolívares).
+    
+    REGLA DE MONEDA:
+    Si los precios de la factura están en Bolívares (o son montos muy altos típicos de VES), DEBES convertirlos a Dólares (USD) dividiéndolos entre la tasa de cambio (${tasaBcv}). Si ya están en dólares, déjalos igual. El JSON de salida SIEMPRE debe tener el "costo" en dólares.
+
+    REGLA DE INVENTARIO:
+    A continuación tienes los nombres de los productos que ya existen en nuestra base de datos:
+    [ ${inventoryContext} ]
+    
+    Tu tarea es asociar los productos de la factura con nuestro inventario. Si el producto de la factura es el mismo que uno del inventario aunque tenga ligeras variaciones de nombre (ej. "Galleta Puig 5" -> "Galleta Puig"), DEBES usar EXACTAMENTE el nombre de nuestro inventario. Si es un producto totalmente nuevo que no se parece a ninguno, usa el nombre limpio y claro de la factura.
+
+    Devuelve un JSON estricto con un arreglo de objetos. Cada objeto debe tener:
+    - nombre: string (el nombre emparejado del inventario, o el nombre limpio si es nuevo, SIEMPRE EN MAYÚSCULAS)
+    - cantidad: number
+    - costo: number (el costo unitario final en DÓLARES)
+    No devuelvas ningún otro texto, solo el JSON puro.
   `;
 
   let mimeType = "image/jpeg";
@@ -74,9 +88,17 @@ export async function scanInvoiceIA(base64Image: string) {
   };
 
   try {
+    if (!ai) {
+      console.error("Gemini AI no está inicializado. Falta la API Key.");
+      return { error: "Gemini AI no está inicializado. Revisa la configuración de API Key." };
+    }
+
     const response = await ai.models.generateContent({
       model: modelName,
-      contents: { parts: [imagePart, { text: "Extrae los productos de esta factura." }] },
+      contents: [
+        imagePart, 
+        { text: "Extrae los productos de esta factura." }
+      ],
       config: {
         systemInstruction,
         responseMimeType: "application/json",
@@ -90,16 +112,24 @@ export async function scanInvoiceIA(base64Image: string) {
               costo: { type: Type.NUMBER }
             },
             required: ["nombre", "cantidad", "costo"]
-
           }
         }
       },
     });
 
-    return JSON.parse(response.text || "[]");
-  } catch (error) {
+    try {
+      const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || "[]";
+      return JSON.parse(text);
+    } catch (parseError: any) {
+      console.error("Error al parsear el JSON de la factura:", parseError, "Respuesta cruda:", response.text);
+      return { error: "Respuesta de la IA no fue un JSON válido." };
+    }
+  } catch (error: any) {
     console.error("Error scanning invoice:", error);
-    return [];
+    if (error?.status === 429 || error?.message?.includes('429') || error?.message?.includes('exceeded your current quota')) {
+      return { error: "Límite de consultas alcanzado. Por favor espera 30 segundos antes de volver a intentarlo." };
+    }
+    return { error: "Fallo al llamar a Gemini: " + (error.message || String(error)) };
   }
 }
 
@@ -114,7 +144,7 @@ export async function analyzeProductImage(imageUrl: string) {
     };
   }
 
-  const modelName = "gemini-1.5-flash";
+  const modelName = "gemini-2.5-flash";
   const systemInstruction = `
     Eres un experto comercial. Analiza la imagen del producto.
     Devuelve un JSON estricto con:
@@ -140,7 +170,10 @@ export async function analyzeProductImage(imageUrl: string) {
           data: base64Data,
         },
       };
-      contents = { parts: [imagePart, { text: "Analiza esta imagen de producto." }] };
+      contents = [
+        imagePart, 
+        { text: "Analiza esta imagen de producto." }
+      ];
     } else {
       contents = `Analiza esta imagen de producto que se encuentra en la siguiente URL: ${imageUrl}`;
     }
@@ -167,4 +200,133 @@ export async function analyzeProductImage(imageUrl: string) {
     return null;
   }
 }
+
+export async function interactWithInvoiceIA(currentItems: any[], userCommand: string) {
+  const modelName = "gemini-2.5-flash";
+  
+  const systemInstruction = `
+    Eres un asistente inteligente para un sistema de inventario (POS).
+    El usuario está viendo una tabla con los siguientes ítems escaneados:
+    ${JSON.stringify(currentItems)}
+
+    El usuario te ha dado la siguiente orden para ajustar la tabla:
+    "${userCommand}"
+
+    Tu tarea es:
+    1. Entender la orden del usuario.
+    2. Encontrar el ítem o los ítems que deben ser modificados en el JSON actual.
+    3. Aplicar las modificaciones solicitadas (pueden ser cambios en 'nombre', 'cantidad', 'costo', 'margen', o 'precio_venta').
+    4. Devolver ÚNICAMENTE el JSON completo (Array de objetos) con los datos ya actualizados. 
+    NO agregues ítems nuevos a menos que el usuario lo pida expresamente. NO elimines ítems a menos que se pida expresamente. Mantén los ítems que no fueron mencionados intactos.
+    
+    Devuelve estrictamente un JSON Array válido. Sin texto markdown ni explicaciones.
+  `;
+
+  try {
+    if (!ai) {
+      console.error("Gemini AI no está inicializado. Falta la API Key.");
+      return { error: "Gemini AI no está inicializado." };
+    }
+
+    const response = await ai.models.generateContent({
+      model: modelName,
+      contents: "Por favor procesa la orden y devuelve el JSON actualizado.",
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              nombre: { type: Type.STRING },
+              cantidad: { type: Type.NUMBER },
+              costo: { type: Type.NUMBER },
+              margen: { type: Type.NUMBER },
+              precio_venta: { type: Type.NUMBER }
+            },
+            required: ["nombre", "cantidad", "costo", "margen", "precio_venta"]
+          }
+        },
+        temperature: 0.1
+      },
+    });
+
+    try {
+      const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || "[]";
+      return JSON.parse(text);
+    } catch (parseError: any) {
+      return { error: "Respuesta de la IA no fue un JSON válido." };
+    }
+  } catch (error: any) {
+    if (error?.status === 429 || error?.message?.includes('429') || error?.message?.includes('exceeded your current quota')) {
+      return { error: "Límite de consultas alcanzado. Por favor espera 30 segundos antes de volver a intentarlo." };
+    }
+    return { error: "Fallo al llamar a Gemini: " + (error.message || String(error)) };
+  }
+}
+
+export async function fillPiecesWithIA(currentPieces: any[], spokenText: string) {
+  const modelName = "gemini-2.5-flash";
+  
+  const systemInstruction = `
+    Eres un asistente inteligente. El usuario está dictando los pesos para una lista de piezas de queso.
+    La lista actual de piezas (vacías o llenas) es:
+    ${JSON.stringify(currentPieces)}
+
+    El usuario ha dictado lo siguiente:
+    "${spokenText}"
+
+    Tu tarea:
+    1. Interpreta lo que el usuario dictó. Por ejemplo, "en la uno 460, en la dos 650, en la 3 658".
+    2. Identifica el número de la pieza (es decir, "uno" es la pieza con numero "1", "dos" es la pieza con numero "2").
+    3. Identifica el peso. SI EL USUARIO DICE NÚMEROS COMO "460" O MENCIONA GRAMOS, ASUME QUE SON GRAMOS y divídelo entre 1000 para obtener kilos (ej. 0.460). El campo "peso" SIEMPRE debe estar en Kilos. Si dice explícitamente kilos (ej. "uno punto cinco"), pon 1.5.
+    4. Actualiza los objetos correspondientes en el arreglo 'currentPieces' reemplazando su 'peso'.
+    5. Devuelve ÚNICAMENTE el JSON array completo de las piezas actualizado.
+    
+    Devuelve estrictamente un JSON Array válido. Sin markdown, sin explicaciones.
+  `;
+
+  try {
+    if (!ai) {
+      return { error: "Gemini AI no está inicializado." };
+    }
+
+    const response = await ai.models.generateContent({
+      model: modelName,
+      contents: "Por favor procesa el dictado y devuelve el JSON actualizado.",
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              id: { type: Type.STRING },
+              numero: { type: Type.STRING },
+              peso: { type: Type.NUMBER },
+              vendida: { type: Type.BOOLEAN }
+            },
+            required: ["id", "numero", "peso", "vendida"]
+          }
+        },
+        temperature: 0.1
+      },
+    });
+
+    try {
+      const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim() || "[]";
+      return JSON.parse(text);
+    } catch (parseError: any) {
+      return { error: "Respuesta de la IA no fue un JSON válido." };
+    }
+  } catch (error: any) {
+    if (error?.status === 429 || error?.message?.includes('429') || error?.message?.includes('exceeded your current quota')) {
+      return { error: "Límite de consultas alcanzado. Por favor espera 30 segundos antes de volver a intentarlo." };
+    }
+    return { error: "Fallo al llamar a Gemini: " + (error.message || String(error)) };
+  }
+}
+
 

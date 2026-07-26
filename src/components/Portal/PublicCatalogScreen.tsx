@@ -666,7 +666,18 @@ Estatus: Pendiente por verificar/entregar
                 Ir a mi Portal de Compras
               </button>
               <button 
-                onClick={() => setUser(null)}
+                onClick={async () => {
+                  setUser(null);
+                  localStorage.removeItem('kalu_current_user');
+                  localStorage.removeItem('kalu_pin_verified');
+                  localStorage.removeItem('kalu_remembered_user');
+                  localStorage.removeItem('kalu_bio_last_user_email');
+                  try {
+                    const { auth } = await import('../../lib/firebase');
+                    await auth.signOut();
+                  } catch (e) {}
+                  window.location.href = '/';
+                }}
                 className="bg-white/5 hover:bg-red-500/20 hover:text-red-400 border border-white/10 text-gray-300 font-bold text-xs uppercase tracking-widest px-4 py-3 rounded-xl transition-all"
               >
                 Cerrar Sesión

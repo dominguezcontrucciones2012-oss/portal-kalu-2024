@@ -260,7 +260,10 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole }) => {
       await auth.signOut();
       localStorage.removeItem('kalu_current_user');
       localStorage.removeItem('kalu_pin_verified');
+      localStorage.removeItem('kalu_remembered_user');
+      localStorage.removeItem('kalu_bio_last_user_email');
       setUser(null);
+      window.location.href = '/';
     } catch (error) {
       console.error('Error logging out:', error);
     }

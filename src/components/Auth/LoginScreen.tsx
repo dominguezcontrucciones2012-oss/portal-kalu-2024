@@ -84,38 +84,39 @@ const LoginScreen: React.FC = () => {
             const cleanEmail = user.email.trim().toLowerCase();
             const masterAdmins = ['dominguezcontrucciones2012@gmail.com', 'dominguezconstrucciones2012@gmail.com', 'domingueconstrucciones@gmail.com', 'dominguezconstrucciones@gmail.com'];
             
-            if (!masterAdmins.includes(cleanEmail)) {
+            let userExistsInDB = masterAdmins.includes(cleanEmail);
+
+            if (!userExistsInDB) {
               const response = await fetch(`https://us-central1-kalu-queso-sanjuam.cloudfunctions.net/buscarCliente?type=email&value=${encodeURIComponent(cleanEmail)}`);
               const data = await response.json();
               
-              if (!data.exists) {
-                // Comprobamos si es un administrador en la colección users
-                let isAdmin = false;
+              if (data.exists) {
+                userExistsInDB = true;
+              } else {
                 try {
                   const usersRef = collection(db, 'users');
                   const q = query(usersRef, where('email', '==', cleanEmail));
                   const querySnapshot = await getDocs(q);
-                  isAdmin = !querySnapshot.empty;
+                  if (!querySnapshot.empty) {
+                    userExistsInDB = true;
+                  }
                 } catch (permError) {
-                  // Si no tiene permisos, seguro no es admin
-                  isAdmin = false;
-                }
-                
-                if (!isAdmin) {
-                  alert("Este correo no está registrado en el sistema. Para ingresar, debes registrarte llenando tus datos como cliente nuevo.");
-                  
-                  // Eliminamos la sesión de Google recién creada para que pueda registrarse manualmente sin el error de 'correo ya existe'
-                  try { await user.delete(); } catch(e) { await auth.signOut(); }
-                  
-                  setGoogleUserPendingPin(null);
-                  setLoading(false);
-                  
-                  // Lo mandamos a registrarse pre-llenando su correo
-                  setRegEmail(user.email);
-                  setViewState('register');
-                  return;
+                  // Si no tiene permisos, ignoramos
                 }
               }
+            }
+            
+            if (!userExistsInDB) {
+              alert("Este correo no está registrado en el sistema. Para ingresar, debes registrarte llenando tus datos como cliente nuevo.");
+              
+              setGoogleUserPendingPin(user);
+              setLoading(false);
+              
+              // Lo mandamos a registrarse pre-llenando su correo
+              setRegEmail(user.email);
+              setRegNombre(user.displayName || '');
+              setViewState('register');
+              return;
             }
           } catch (e) {
             console.warn("Fallo al consultar existencia en CRM para auth de Google:", e);
@@ -174,7 +175,18 @@ const LoginScreen: React.FC = () => {
   const handleCancelGooglePin = () => {
     auth.signOut().catch(console.error);
     localStorage.removeItem('kalu_pin_verified');
-    resetViews();
+    localStorage.removeItem('kalu_current_user');
+    localStorage.removeItem('kalu_remembered_user');
+    localStorage.removeItem('kalu_bio_last_user_email');
+    window.location.href = '/';
+  };
+
+  const handleOtherAccessMethods = () => {
+    localStorage.removeItem('kalu_pin_verified');
+    localStorage.removeItem('kalu_current_user');
+    localStorage.removeItem('kalu_remembered_user');
+    localStorage.removeItem('kalu_bio_last_user_email');
+    window.location.href = '/';
   };
 
   const handleBiometricUnlock = async (isAuto = false, targetEmail?: string) => {
@@ -232,6 +244,16 @@ const LoginScreen: React.FC = () => {
           if (freshDocData.role) {
             freshRole = freshDocData.role;
           }
+        } else {
+          // The query completed without errors, but the user is NOT in the CRM
+          removeBiometrics(result.email);
+          setBioUserEmail(null);
+          setRememberedUser(null);
+          localStorage.removeItem('kalu_remembered_user');
+          alert("Tu perfil ya no está registrado en el sistema. Se ha eliminado la vinculación biométrica por seguridad.");
+          setLoading(false);
+          resetViews();
+          return;
         }
       } catch (e) {
         console.warn("No se pudo consultar rol en Firestore para huella:", e);
@@ -273,14 +295,7 @@ const LoginScreen: React.FC = () => {
     }
   };
 
-  const handleOtherAccessMethods = () => {
-    setRememberedUser(null);
-    localStorage.removeItem('kalu_remembered_user');
-    setPin('');
-    setEmail('');
-    setStepLogin(1);
-    setViewState('selection');
-  };
+
 
   const handlePinLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -299,8 +314,22 @@ const LoginScreen: React.FC = () => {
         const response = await fetch(`https://us-central1-kalu-queso-sanjuam.cloudfunctions.net/buscarCliente?type=${searchType}&value=${encodeURIComponent(cleanEmail)}`);
         const data = await response.json();
 
-        if (!data.exists) {
-          setError('❌ Este correo o cédula no está registrado en nuestro sistema. Por favor acércate a la tienda para que te registremos.');
+        let exists = data.exists;
+        
+        if (!exists) {
+          try {
+            const usersRef = collection(db, 'users');
+            const q = query(usersRef, where(searchType, '==', cleanEmail));
+            const snap = await getDocs(q);
+            if (!snap.empty) exists = true;
+          } catch (e) {}
+        }
+
+        if (!exists) {
+          alert('❌ Este correo o cédula no está registrado en nuestro sistema. Por favor, regístrate a continuación.');
+          setRegEmail(isEmail ? cleanEmail : '');
+          setRegCedula(isEmail ? '' : cleanEmail);
+          setViewState('register');
           setLoading(false);
           return;
         }
@@ -577,9 +606,11 @@ const LoginScreen: React.FC = () => {
       let authUid = '';
       let userObj = null;
 
-      if (googleUserPendingPin && googleUserPendingPin.email === regEmail) {
-        authUid = googleUserPendingPin.uid;
-        userObj = googleUserPendingPin;
+      const currentUser = (auth.currentUser && !auth.currentUser.isAnonymous) ? auth.currentUser : googleUserPendingPin;
+
+      if (currentUser) {
+        authUid = currentUser.uid;
+        userObj = currentUser;
       } else {
         sessionStorage.setItem('kalu_is_registering', 'true');
         const userCredential = await createUserWithEmailAndPassword(auth, regEmail, regPin);
@@ -625,22 +656,25 @@ const LoginScreen: React.FC = () => {
             });
           }
         } else {
-          throw new Error("Tu perfil no fue encontrado en el sistema de la tienda. Debes estar registrado en la tienda antes de usar la aplicación.");
-        }
-
-        if (googleUserPendingPin && googleUserPendingPin.email !== regEmail) {
-          try { await googleUserPendingPin.delete(); } catch(e) {}
+          // Es un cliente completamente nuevo, registrarlo en la base de datos de clientes
+          await createClient({
+            nombre: regNombre,
+            cedula: regCedula,
+            email: regEmail,
+            telefono: regTelefono,
+            direccion: regDireccion,
+            pin: regPin,
+            tipo_precio: 'Detal',
+            estatus: 'Activo'
+          }, authUid);
         }
         
-        if (biometricSupported && enableBioOnRegister) {
-          await registerBiometrics(regEmail);
-        }
-      } catch (dbError) {
+      } catch (dbError: any) {
         // If database saving fails and it's a new account, delete the orphaned auth user immediately
         if (!googleUserPendingPin && userObj) {
           await userObj.delete();
         }
-        throw new Error("No se pudo guardar el perfil en la base de datos. Por favor, intenta de nuevo.");
+        throw new Error(dbError.message || "No se pudo guardar el perfil en la base de datos. Por favor, intenta de nuevo.");
       }
 
       localStorage.setItem('kalu_pin_verified', 'true');
@@ -1199,19 +1233,6 @@ const LoginScreen: React.FC = () => {
                     {loading ? 'REGISTRANDO...' : 'REGISTRARME'}
                   </button>
                 </div>
-                {biometricSupported && (
-                  <div className="pt-2 border-t border-white/5 mt-2">
-                    <button
-                      type="button"
-                      onClick={() => setEnableBioOnRegister(!enableBioOnRegister)}
-                      className={`w-full py-4 px-2 rounded-2xl border-2 font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 transition-all ${enableBioOnRegister ? 'bg-[#3498db]/20 border-[#3498db] text-[#3498db] shadow-[0_0_20px_rgba(52,152,219,0.3)]' : 'bg-black/40 border-white/10 text-gray-400 hover:bg-white/5'}`}
-                    >
-                      <Fingerprint size={20} className={enableBioOnRegister ? 'animate-pulse' : ''} />
-                      {enableBioOnRegister ? 'Datos Biométricos Activados' : 'Activar Datos Biométricos'}
-                    </button>
-                    <p className="text-[9px] text-gray-500 font-bold mt-2 text-center uppercase tracking-widest">Permite iniciar sesión con tu huella o rostro.</p>
-                  </div>
-                )}
               </form>
             )}
             <div className="pt-6 border-t border-white/5 grid grid-cols-2 gap-4">

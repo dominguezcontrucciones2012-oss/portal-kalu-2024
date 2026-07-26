@@ -8,7 +8,10 @@ import {
   Zap, 
   FileText,
   Save,
-  Loader2
+  Loader2,
+  Snowflake,
+  Flame,
+  Mic
 } from 'lucide-react';
 import { db } from '../../lib/firebase';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, serverTimestamp, increment } from 'firebase/firestore';
@@ -16,7 +19,7 @@ import { subscribeToCollection } from '../../lib/dbUtils';
 import { useAuth } from '../../contexts/AuthProvider';
 import { useToast } from '../../contexts/ToastProvider';
 import { cn, formatCurrency, compressImage } from '../../lib/utils';
-import { scanInvoiceIA } from '../../services/geminiService';
+import { scanInvoiceIA, interactWithInvoiceIA } from '../../services/geminiService';
 
 const PurchasesScreen: React.FC = () => {
   const { user } = useAuth();
@@ -31,7 +34,94 @@ const PurchasesScreen: React.FC = () => {
   }, []);
   const [items, setItems] = useState<any[]>([]);
   const [scanning, setScanning] = useState(false);
+  const [hasFrozen, setHasFrozen] = useState(false);
+  const [aiCommand, setAiCommand] = useState('');
+  const [aiAdjusting, setAiAdjusting] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (localStorage.getItem('kalu_frozen_purchase')) {
+      setHasFrozen(true);
+    }
+  }, []);
+
+  const handleFreeze = () => {
+    if (items.length === 0) return addToast('error', 'No hay items para congelar');
+    localStorage.setItem('kalu_frozen_purchase', JSON.stringify({ items, selectedProvider, isCredit }));
+    setItems([]);
+    setSelectedProvider('');
+    setIsCredit(false);
+    setHasFrozen(true);
+    addToast('success', 'Factura congelada localmente. ¡No se perderá al refrescar!');
+  };
+
+  const handleUnfreeze = () => {
+    const frozen = localStorage.getItem('kalu_frozen_purchase');
+    if (frozen) {
+      try {
+        const data = JSON.parse(frozen);
+        setItems(data.items || []);
+        setSelectedProvider(data.selectedProvider || '');
+        setIsCredit(data.isCredit || false);
+        localStorage.removeItem('kalu_frozen_purchase');
+        setHasFrozen(false);
+        addToast('success', 'Factura descongelada exitosamente');
+      } catch (e) {
+        addToast('error', 'Error recuperando factura congelada');
+      }
+    }
+  };
+
+  const handleAiAdjustment = async () => {
+    if (!aiCommand.trim() || items.length === 0) return;
+    setAiAdjusting(true);
+    try {
+      const result = await interactWithInvoiceIA(items, aiCommand);
+      if (Array.isArray(result)) {
+        setItems(result);
+        setAiCommand('');
+        addToast('success', 'Factura ajustada por la IA exitosamente');
+      } else if (result.error) {
+        addToast('error', result.error);
+      }
+    } catch (e: any) {
+      addToast('error', 'Error al comunicarse con la IA');
+    } finally {
+      setAiAdjusting(false);
+    }
+  };
+
+  const startVoiceRecognition = () => {
+    // @ts-ignore
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      addToast('error', 'Tu navegador no soporta reconocimiento de voz');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'es-VE'; // Spanish Venezuela
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => setIsListening(true);
+    
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setAiCommand(prev => (prev ? prev + ' ' : '') + transcript);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('Error de voz:', event.error);
+      addToast('error', 'No se pudo escuchar la voz');
+      setIsListening(false);
+    };
+
+    recognition.onend = () => setIsListening(false);
+
+    recognition.start();
+  };
 
   const handleScanInvoice = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -39,11 +129,26 @@ const PurchasesScreen: React.FC = () => {
 
     setScanning(true);
     try {
+      // 1. Obtener la tasa actual
+      const { getLatestTasa } = await import('../../lib/dbUtils');
+      const tasa = await getLatestTasa();
+
+      // 2. Obtener nombres de productos para el contexto de la IA
+      const prodsSnap = await getDocs(collection(db, 'products'));
+      const productNames = prodsSnap.docs.map(d => d.data().nombre).join(', ');
+
       const compressedBase64 = await compressImage(file, 800);
-      const result = await scanInvoiceIA(compressedBase64);
+      const result = await scanInvoiceIA(compressedBase64, tasa, productNames);
       
       if (Array.isArray(result) && result.length > 0) {
-        setItems(prev => [...prev, ...result]);
+        const normalizedResult = result.map((item: any) => ({
+          ...item,
+          margen: item.margen || 0,
+          precio_venta: item.precio_venta || item.costo || 0
+        }));
+        setItems(prev => [...prev, ...normalizedResult]);
+      } else if (result && result.error) {
+        alert("ERROR DETALLADO DE LA IA: " + result.error);
       } else {
         alert("La IA no pudo encontrar productos en esta imagen. Intenta con una foto más clara.");
       }
@@ -191,6 +296,17 @@ const PurchasesScreen: React.FC = () => {
             className="hidden" 
             onChange={handleScanInvoice} 
           />
+          
+          {hasFrozen && (
+            <button onClick={handleUnfreeze} className="bg-orange-500 hover:bg-orange-600 text-white font-black py-4 px-6 rounded-2xl shadow-xl transition-all flex items-center gap-2 text-sm uppercase">
+              <Flame size={18} /> DESCONGELAR
+            </button>
+          )}
+
+          <button onClick={handleFreeze} disabled={items.length === 0} className="bg-slate-700 hover:bg-slate-600 text-white font-black py-4 px-6 rounded-2xl shadow-xl transition-all flex items-center gap-2 text-sm uppercase disabled:opacity-50">
+            <Snowflake size={18} /> CONGELAR
+          </button>
+
           <button 
             onClick={triggerFileInput}
             disabled={scanning}
@@ -204,6 +320,40 @@ const PurchasesScreen: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
+          <div className="bg-[#9b59b6]/10 border border-[#9b59b6]/30 rounded-[2.5rem] p-6 flex flex-col md:flex-row gap-4 items-center">
+            <div className="bg-[#9b59b6]/20 p-3 rounded-full flex-shrink-0">
+              <Zap size={24} className="text-[#9b59b6] animate-pulse" fill="currentColor" />
+            </div>
+            
+            <button
+              onClick={startVoiceRecognition}
+              title="Dictar instrucción por voz"
+              className={cn(
+                "p-4 rounded-full flex-shrink-0 transition-all shadow-md",
+                isListening ? "bg-red-500 text-white animate-pulse shadow-red-500/50" : "bg-black/30 text-gray-400 hover:text-white hover:bg-black/50"
+              )}
+            >
+              <Mic size={20} />
+            </button>
+
+            <input
+              type="text"
+              value={aiCommand}
+              onChange={(e) => setAiCommand(e.target.value)}
+              placeholder="Ej. 'La harina son 40 pacas de 12, el costo de la pasta es 14000, margen al 20%...'"
+              className="flex-1 bg-black/30 border border-white/10 rounded-2xl py-4 px-6 text-sm font-medium focus:border-[#9b59b6] outline-none text-white w-full"
+              onKeyDown={(e) => e.key === 'Enter' && handleAiAdjustment()}
+            />
+            <button
+              onClick={handleAiAdjustment}
+              disabled={aiAdjusting || items.length === 0 || !aiCommand.trim()}
+              className="bg-[#9b59b6] hover:bg-[#8e44ad] text-white font-black py-4 px-8 rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 text-xs uppercase disabled:opacity-50 whitespace-nowrap w-full md:w-auto"
+            >
+              {aiAdjusting ? <Loader2 className="animate-spin" size={18} /> : <Zap size={18} fill="currentColor" />}
+              {aiAdjusting ? "PENSANDO..." : "AJUSTAR CON IA"}
+            </button>
+          </div>
+
           <div className="bg-white/5 border border-white/10 rounded-[2.5rem] overflow-hidden">
              <table className="w-full text-left">
                 <thead>

@@ -365,11 +365,6 @@ export default function DispatchScreen() {
     }
   };
 
-  const handleWhatsApp = (order: any) => {
-    const text = encodeURIComponent(`Hola ${order.nombre_cliente}, tu pedido de Kalu Queso San Juan ya está empacado y listo para retirar. ¡Te esperamos!`);
-    window.open(`https://wa.me/?text=${text}`, '_blank');
-  };
-
   const handlePrint = (order: any) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
@@ -716,15 +711,7 @@ export default function DispatchScreen() {
                       <CheckCircle size={16} /> {order.tipo_entrega === 'delivery' && !order.repartidor_id ? 'Asignar / Empacar' : 'Marcar Empacado'}
                     </button>
                   ) : (
-                    <div className="col-span-2 flex gap-1">
-                      <button
-                        onClick={() => handleWhatsApp(order)}
-                        className="flex-1 bg-green-600 hover:bg-green-500 text-white p-3 rounded-xl font-black text-[9px] uppercase tracking-wider flex items-center justify-center gap-1 transition-colors"
-                      >
-                        <MessageCircle size={14} /> Avisar Cliente
-                      </button>
-
-                      {!order.repartidor_id && order.tipo_entrega === 'delivery' && (
+                    <div className="col-span-2 flex gap-1">                      {!order.repartidor_id && order.tipo_entrega === 'delivery' && (
                         <button
                           onClick={() => setAssignModalOpen(order.id)}
                           className="flex-1 bg-purple-600 hover:bg-purple-500 text-white p-3 rounded-xl font-black text-[9px] uppercase tracking-wider flex items-center justify-center gap-1 transition-colors"

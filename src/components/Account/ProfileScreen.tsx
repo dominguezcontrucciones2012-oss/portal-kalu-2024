@@ -26,7 +26,10 @@ const ProfileScreen: React.FC = () => {
     setUser(null);
     localStorage.removeItem('kalu_current_user');
     localStorage.removeItem('kalu_pin_verified');
+    localStorage.removeItem('kalu_remembered_user');
+    localStorage.removeItem('kalu_bio_last_user_email');
     signOut(auth);
+    window.location.href = '/';
   };
 
   return (

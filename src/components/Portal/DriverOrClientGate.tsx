@@ -12,8 +12,11 @@ export default function DriverOrClientGate() {
     try {
       setUser(null);
       localStorage.removeItem('kalu_current_user');
+      localStorage.removeItem('kalu_remembered_user');
       localStorage.removeItem('kalu_pin_verified');
+      localStorage.removeItem('kalu_bio_last_user_email');
       await auth.signOut();
+      window.location.href = '/';
     } catch (e) {
       console.error(e);
     }
