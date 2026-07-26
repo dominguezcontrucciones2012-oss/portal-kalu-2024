@@ -1337,7 +1337,7 @@ Estatus: Pendiente por verificar/entregar
           </div>
 
           {/* Grid de Productos */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
             {filteredProducts.map(product => {
               const qty = getQuantityInCart(product.id);
               const price = product.precio_oferta_usd || product.precio_normal_usd;
@@ -1347,14 +1347,14 @@ Estatus: Pendiente por verificar/entregar
                 <div 
                   key={product.id} 
                   className={cn(
-                    "rounded-[2.5rem] p-5 flex flex-col justify-between transition-all duration-300 group shadow-lg border",
+                    "rounded-3xl p-3 flex flex-col justify-between transition-all duration-300 group shadow-lg border",
                     qty > 0 
                       ? "bg-[#3498db]/20 border-[#3498db]/40 shadow-[#3498db]/10 scale-[1.02]" 
                       : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20"
                   )}
                 >
-                  <div className="flex gap-4">
-                    <div className="w-24 h-24 rounded-2xl overflow-hidden bg-black/40 relative shrink-0">
+                  <div className="flex flex-col gap-2 flex-1">
+                    <div className="w-full aspect-square rounded-2xl overflow-hidden bg-black/40 relative shrink-0">
                       {product.imagen_url ? (
                         <img src={product.imagen_url} alt={product.nombre} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                       ) : (
@@ -1364,63 +1364,62 @@ Estatus: Pendiente por verificar/entregar
                       )}
                       {product.stock <= 0 && (
                         <div className="absolute inset-0 bg-black/80 flex items-center justify-center">
-                          <span className="text-[8px] font-black uppercase bg-red-500 px-1.5 py-0.5 rounded">Agotado</span>
+                          <span className="text-[10px] font-black uppercase bg-red-500 px-2 py-1 rounded">Agotado</span>
                         </div>
                       )}
                     </div>
 
-                    <div className="space-y-1 min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="bg-black/40 text-[7px] font-black uppercase px-2 py-0.5 rounded border border-white/5">
+                    <div className="space-y-1 mt-1 flex-1 flex flex-col">
+                      <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                        <span className="bg-black/40 text-[8px] font-black uppercase px-1.5 py-0.5 rounded border border-white/5 truncate max-w-[80%]">
                           {product.categoria}
                         </span>
                         {hasOffer && (
-                          <span className="bg-yellow-500 text-black text-[7px] font-black uppercase px-1.5 py-0.5 rounded">
+                          <span className="bg-yellow-500 text-black text-[8px] font-black uppercase px-1.5 py-0.5 rounded">
                             Oferta
                           </span>
                         )}
                       </div>
-                      <h4 className="font-bold text-sm uppercase truncate text-white">{product.nombre}</h4>
-                      <p className="text-[10px] text-gray-400 line-clamp-2 leading-snug">{product.descripcion}</p>
+                      <h4 className="font-bold text-xs uppercase line-clamp-2 text-white leading-tight">{product.nombre}</h4>
                     </div>
                   </div>
 
-                  <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between">
-                    <div>
+                  <div className="mt-2 pt-2 border-t border-white/5 flex flex-col gap-2">
+                    <div className="flex flex-col">
                       <div className="flex items-baseline gap-1.5">
-                        <span className="text-base font-black text-emerald-400">{formatCurrency(price)}</span>
+                        <span className="text-sm font-black text-emerald-400">{formatCurrency(price)}</span>
                         {hasOffer && (
-                          <span className="text-[10px] text-gray-500 line-through">{formatCurrency(product.precio_normal_usd)}</span>
+                          <span className="text-[9px] text-gray-500 line-through">{formatCurrency(product.precio_normal_usd)}</span>
                         )}
                       </div>
                       <div className="text-[9px] text-gray-500 font-bold">Bs. {formatCurrency(price * tasaBcv, 'Bs')}</div>
                     </div>
 
                     {product.stock > 0 && (
-                      <div className="flex items-center">
+                      <div className="flex justify-end w-full">
                         {qty > 0 ? (
-                          <div className="bg-white/5 border border-white/10 rounded-xl p-1 flex items-center gap-2">
+                          <div className="bg-white/5 border border-white/10 rounded-xl p-1 flex items-center gap-2 w-full justify-between">
                             <button 
                               onClick={() => removeFromCart(product.id)}
-                              className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center hover:bg-white/20"
+                              className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center hover:bg-white/20"
                             >
-                              <Minus size={10} />
+                              <Minus size={12} />
                             </button>
-                            <span className="text-xs font-black text-white w-4 text-center">{qty}</span>
+                            <span className="text-sm font-black text-white w-4 text-center">{qty}</span>
                             <button 
                               onClick={() => addToCart(product)}
                               disabled={qty >= product.stock}
-                              className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center hover:bg-white/20 disabled:opacity-30"
+                              className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center hover:bg-white/20 disabled:opacity-30"
                             >
-                              <Plus size={10} />
+                              <Plus size={12} />
                             </button>
                           </div>
                         ) : (
                           <button
                             onClick={() => addToCart(product)}
-                            className="bg-[#3498db] text-white p-2.5 rounded-xl hover:bg-[#2980b9] active:scale-95 transition-all"
+                            className="w-full bg-[#3498db]/20 text-[#3498db] hover:bg-[#3498db] hover:text-white border border-[#3498db]/30 py-2 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-1.5"
                           >
-                            <Plus size={14} />
+                            <Plus size={12} /> AGREGAR
                           </button>
                         )}
                       </div>

@@ -764,7 +764,7 @@ Estatus: Pendiente por verificar/entregar
             <p className="text-gray-500 text-sm mt-1">Prueba con otra categoría o término de búsqueda.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {filteredProducts.map(product => {
               const qty = getQuantityInCart(product.id);
               const price = product.precio_oferta_usd || product.precio_normal_usd;
@@ -775,12 +775,12 @@ Estatus: Pendiente por verificar/entregar
                   key={product.id} 
                   onClick={handleCheckoutClick}
                   className={cn(
-                    "rounded-[2.5rem] p-5 flex flex-col justify-between transition-all duration-300 group shadow-lg border text-left",
+                    "rounded-3xl p-3 flex flex-col justify-between transition-all duration-300 group shadow-lg border text-left",
                     "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 hover:-translate-y-1"
                   )}
                 >
-                  <div className="space-y-4">
-                    <div className="h-48 rounded-[2rem] overflow-hidden bg-black/30 relative">
+                  <div className="flex flex-col gap-2 flex-1 w-full">
+                    <div className="w-full aspect-square rounded-2xl overflow-hidden bg-black/30 relative shrink-0">
                       {product.imagen_url ? (
                         <img 
                           src={product.imagen_url} 
@@ -790,60 +790,57 @@ Estatus: Pendiente por verificar/entregar
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-gray-600">
-                          <ShoppingBag size={48} />
+                          <ShoppingBag size={32} />
                         </div>
                       )}
                       
-                      <span className="absolute top-4 left-4 bg-black/60 backdrop-blur-md text-white border border-white/10 text-[8px] font-black uppercase tracking-widest px-3 py-1 rounded-full">
-                        {product.categoria}
-                      </span>
-
-                      {hasOffer && (
-                        <span className="absolute top-4 right-4 bg-yellow-500 text-black text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-full shadow-lg">
-                          Oferta
-                        </span>
-                      )}
-
                       {product.stock <= 0 ? (
                         <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center">
-                          <span className="bg-red-500 text-white font-black text-xs uppercase tracking-widest px-4 py-2 rounded-xl">
+                          <span className="bg-red-500 text-white font-black text-[10px] uppercase tracking-widest px-2 py-1 rounded-lg">
                             Agotado
                           </span>
                         </div>
                       ) : product.stock <= 5 ? (
-                        <span className="absolute bottom-4 left-4 bg-red-500/90 text-white text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full">
-                          Pocas unidades ({product.stock})
+                        <span className="absolute bottom-2 left-2 bg-red-500/90 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full">
+                          Quedan {product.stock}
                         </span>
                       ) : null}
                     </div>
 
-                    <div className="px-2 space-y-2">
-                      <h3 className="text-lg font-black text-white leading-tight uppercase truncate">{product.nombre}</h3>
-                      <p className="text-xs text-gray-400 font-bold line-clamp-2 min-h-[2rem]">
-                        {product.descripcion || 'Sin descripción disponible.'}
-                      </p>
+                    <div className="space-y-1 mt-1 flex-1 flex flex-col w-full">
+                      <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                        <span className="bg-black/40 text-[8px] font-black uppercase px-1.5 py-0.5 rounded border border-white/5 truncate max-w-[80%]">
+                          {product.categoria}
+                        </span>
+                        {hasOffer && (
+                          <span className="bg-yellow-500 text-black text-[8px] font-black uppercase px-1.5 py-0.5 rounded shadow-lg">
+                            Oferta
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="text-xs font-black text-white leading-tight uppercase line-clamp-2">{product.nombre}</h3>
                     </div>
                   </div>
 
-                  <div className="mt-6 pt-4 border-t border-white/5 px-2 flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xl font-black text-emerald-400">
+                  <div className="mt-2 pt-2 border-t border-white/5 flex flex-col gap-2 w-full">
+                    <div className="flex flex-col">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-sm font-black text-emerald-400">
                           {formatCurrency(price)}
                         </span>
                         {hasOffer && (
-                          <span className="text-xs text-gray-500 line-through font-bold">
+                          <span className="text-[9px] text-gray-500 line-through font-bold">
                             {formatCurrency(product.precio_normal_usd)}
                           </span>
                         )}
                       </div>
-                      <div className="text-[10px] text-gray-500 font-bold">
+                      <div className="text-[9px] text-gray-500 font-bold">
                         {formatCurrency(price , 'Bs', tasaBcv).replace('VES', 'Bs.')}
                       </div>
                     </div>
 
                     {product.stock > 0 && (
-                      <div className="bg-[#3498db] text-white px-4 py-2 rounded-2xl shadow-lg shadow-[#3498db]/20 flex items-center justify-center font-black uppercase text-[10px] tracking-widest group-hover:bg-[#2980b9] transition-colors">
+                      <div className="bg-[#3498db]/20 text-[#3498db] border border-[#3498db]/30 group-hover:text-white px-2 py-2 rounded-xl shadow-lg flex items-center justify-center font-black uppercase text-[10px] tracking-widest group-hover:bg-[#2980b9] transition-colors w-full">
                         Comprar
                       </div>
                     )}
