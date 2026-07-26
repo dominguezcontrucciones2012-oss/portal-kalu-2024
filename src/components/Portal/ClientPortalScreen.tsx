@@ -126,10 +126,8 @@ const ClientPortal: React.FC = () => {
   const handleLogout = async () => {
     try {
       setUser(null);
-      localStorage.removeItem('kalu_current_user');
-      localStorage.removeItem('kalu_remembered_user');
-      localStorage.removeItem('kalu_pin_verified');
-      localStorage.removeItem('kalu_bio_last_user_email');
+      localStorage.clear();
+      sessionStorage.clear();
       await auth.signOut();
       window.location.href = '/';
     } catch (err) {
@@ -487,7 +485,10 @@ const ClientPortal: React.FC = () => {
 
     // Suscribirse a los mensajes directos y globales del cliente
     const unsubMensajes = subscribeToUserMessages([targetClientId, 'todos', 'global'], (myMsgs) => {
-      const sorted = myMsgs.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+      // Filtrar facturas generadas automticamente para que no se muestren como mensajes
+      const sorted = myMsgs
+        .filter((m: any) => !(m.titulo || '').toUpperCase().includes('FACTURA') && !(m.titulo || '').toUpperCase().includes('REPORTE DE PAGO'))
+        .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
       setMensajes(sorted);
     });
 
@@ -1169,29 +1170,28 @@ Estatus: Pendiente por verificar/entregar
 
           {/* SECCIÓN DE TICKETS DE SORTEO */}
           {myTickets.length > 0 && (
-            <div className="bg-gradient-to-br from-yellow-500/20 to-orange-500/20 border border-yellow-500/30 p-6 rounded-[2rem] space-y-4 mb-2 relative overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500">
+            <div className="bg-gradient-to-br from-yellow-500/20 to-orange-500/20 border border-yellow-500/30 p-4 rounded-3xl mb-4 relative overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500">
               <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-yellow-500/30 rounded-full blur-[120px] pointer-events-none" />
-              <div className="relative z-10">
-                <h3 className="text-xl font-black uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-500 flex items-center gap-2 mb-4">
-                  <Trophy className="text-yellow-400" size={24} /> 
-                  Tus Tickets del Sorteo (15 KG Queso)
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="relative z-10 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-black uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-500 flex items-center gap-2">
+                    <Trophy className="text-yellow-400" size={18} /> 
+                    Sorteo 15 KG Queso
+                  </h3>
+                  <div className="bg-yellow-500/20 text-yellow-400 font-bold px-3 py-1 rounded-full text-xs border border-yellow-500/20">
+                    {myTickets.length} Tickets
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
                   {myTickets.map(ticket => (
-                    <div key={ticket.id} className="bg-black/40 border border-yellow-500/20 p-4 rounded-2xl flex items-center gap-4">
-                      <div className="bg-yellow-500/20 p-3 rounded-xl text-yellow-400 shrink-0">
-                        <Ticket size={24} />
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-gray-400 font-black uppercase tracking-wider leading-none mb-1">TICKET POR COMPRA</p>
-                        <p className="text-lg font-black text-white leading-none"># {ticket.codigo_pedido || 'TICKET'}</p>
-                        <p className="text-[10px] text-gray-500 mt-1">{new Date(ticket.fecha).toLocaleDateString()}</p>
-                      </div>
+                    <div key={ticket.id} className="bg-black/40 border border-yellow-500/20 px-3 py-1.5 rounded-xl flex items-center gap-2">
+                      <Ticket size={14} className="text-yellow-500" />
+                      <span className="text-xs font-black text-white">#{ticket.codigo_pedido || 'TICKET'}</span>
                     </div>
                   ))}
                 </div>
-                <p className="text-[10px] text-yellow-400/80 font-bold mt-4 leading-relaxed">
-                  ¡Guarda estos tickets! Participas automáticamente en el sorteo semanal de 15 KG de queso. El ganador será anunciado en nuestras redes sociales este fin de semana.
+                <p className="text-[10px] text-yellow-400/80 font-bold leading-relaxed m-0">
+                  ¡Guarda estos tickets! Participas automáticamente en el sorteo semanal. El ganador será anunciado en nuestras redes sociales este fin de semana.
                 </p>
               </div>
             </div>

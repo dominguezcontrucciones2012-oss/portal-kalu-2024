@@ -84,47 +84,68 @@ export default function DriverPortalScreen() {
       }
     });
 
+    let isMounted = true;
+
+    // Timeout de seguridad: Si Firestore no responde en 5 segundos, liberamos la UI
+    const loadingTimeout = setTimeout(() => {
+      if (isMounted) setIsDataLoaded(true);
+    }, 5000);
+
     const unsub = subscribeToCollection('sales', async (data) => {
-      const myOrders = data.filter((s: any) => s.repartidor_id === user.id);
-      
-      // Notificar si hay un pedido nuevo
-      const currentOrderIds = myOrders.map((o: any) => o.id);
-      if (previousOrdersRef.current.length > 0) {
-        const hasNewOrder = currentOrderIds.some(id => !previousOrdersRef.current.includes(id));
-        if (hasNewOrder) {
-          vibratePhone();
-          showSystemNotification('Nuevo Reparto - Kalu', '¡Tienes un nuevo pedido asignado para despachar!');
-          addToast('success', '¡Nuevo pedido asignado!');
-        }
-      }
-      previousOrdersRef.current = currentOrderIds;
-      
-      // Enriquecer con datos del cliente
-      const enrichedOrders = await Promise.all(myOrders.map(async (order: any) => {
-        if (order.cliente_id) {
-          try {
-            const clientData = await getDocument('clients', order.cliente_id);
-            if (clientData) {
-              return {
-                ...order,
-                direccion_cliente: clientData.direccion || 'Dirección no registrada',
-                telefono_cliente: clientData.telefono || 'Teléfono no registrado'
-              };
-            }
-          } catch (error) {
-            console.error(`Error fetching client ${order.cliente_id}:`, error);
+      try {
+        const myOrders = data.filter((s: any) => s.repartidor_id === user.id);
+        
+        // Notificar si hay un pedido nuevo
+        const currentOrderIds = myOrders.map((o: any) => o.id);
+        if (previousOrdersRef.current.length > 0) {
+          const hasNewOrder = currentOrderIds.some(id => !previousOrdersRef.current.includes(id));
+          if (hasNewOrder) {
+            vibratePhone();
+            showSystemNotification('Nuevo Reparto - Kalu', '¡Tienes un nuevo pedido asignado para despachar!');
+            addToast('success', '¡Nuevo pedido asignado!');
           }
         }
-        return order;
-      }));
+        previousOrdersRef.current = currentOrderIds;
+        
+        // Enriquecer con datos del cliente
+        const enrichedOrders = await Promise.all(myOrders.map(async (order: any) => {
+          if (order.cliente_id) {
+            try {
+              const clientData = await getDocument('clients', order.cliente_id);
+              if (clientData) {
+                return {
+                  ...order,
+                  direccion_cliente: clientData.direccion || 'Dirección no registrada',
+                  telefono_cliente: clientData.telefono || 'Teléfono no registrado'
+                };
+              }
+            } catch (error) {
+              console.error(`Error fetching client ${order.cliente_id}:`, error);
+            }
+          }
+          return order;
+        }));
 
-      // Ordenar por fecha descendente
-      enrichedOrders.sort((a, b) => new Date(b.fecha || 0).getTime() - new Date(a.fecha || 0).getTime());
-      setOrders(enrichedOrders);
-      setIsDataLoaded(true);
+        // Ordenar por fecha descendente
+        enrichedOrders.sort((a, b) => new Date(b.fecha || 0).getTime() - new Date(a.fecha || 0).getTime());
+        
+        if (isMounted) {
+          setOrders(enrichedOrders);
+          setIsDataLoaded(true);
+          clearTimeout(loadingTimeout);
+        }
+      } catch (err) {
+        console.error("Error procesando pedidos del repartidor:", err);
+        if (isMounted) {
+          setIsDataLoaded(true);
+          clearTimeout(loadingTimeout);
+        }
+      }
     });
 
     return () => {
+      isMounted = false;
+      clearTimeout(loadingTimeout);
       unsub();
       unsubUser();
     };

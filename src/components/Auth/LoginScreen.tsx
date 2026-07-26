@@ -174,10 +174,8 @@ const LoginScreen: React.FC = () => {
 
   const handleCancelGooglePin = () => {
     auth.signOut().catch(console.error);
-    localStorage.removeItem('kalu_pin_verified');
-    localStorage.removeItem('kalu_current_user');
-    localStorage.removeItem('kalu_remembered_user');
-    localStorage.removeItem('kalu_bio_last_user_email');
+    localStorage.clear();
+    sessionStorage.clear();
     window.location.href = '/';
   };
 
@@ -750,7 +748,8 @@ const LoginScreen: React.FC = () => {
   function resetViews() {
     try { auth.signOut(); } catch(e) {}
     setRememberedUser(null);
-    localStorage.removeItem('kalu_remembered_user');
+    localStorage.clear();
+    sessionStorage.clear();
     setGoogleUserPendingPin(null);
     setViewState('selection');
     setRecoveryType(null);

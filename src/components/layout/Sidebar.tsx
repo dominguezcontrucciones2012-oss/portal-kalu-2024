@@ -258,10 +258,8 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole }) => {
   const handleLogout = async () => {
     try {
       await auth.signOut();
-      localStorage.removeItem('kalu_current_user');
-      localStorage.removeItem('kalu_pin_verified');
-      localStorage.removeItem('kalu_remembered_user');
-      localStorage.removeItem('kalu_bio_last_user_email');
+      localStorage.clear();
+      sessionStorage.clear();
       setUser(null);
       window.location.href = '/';
     } catch (error) {

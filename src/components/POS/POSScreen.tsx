@@ -354,11 +354,26 @@ const POSScreen: React.FC = () => {
           }
         }
 
+        const isFullyPaid = esAbono ? true : (totalPaidUSD >= totalUSD - 0.01);
+        let finalStatus = loadedOrder?.status_pedido || 'pendiente';
+        
+        if (isFullyPaid) {
+          if (loadedOrder?.tipo_entrega === 'retiro') {
+            finalStatus = 'listo';
+          } else if (loadedOrder?.status_pedido === 'efectivo_en_ruta') {
+            finalStatus = 'entregado';
+          } else if (loadedOrder?.tipo_entrega === 'delivery') {
+            finalStatus = 'listo'; // Para que el repartidor lo lleve
+          } else {
+            finalStatus = 'entregado'; // Bot/In-store
+          }
+        }
+
         // Actualizar pedido web existente
         await updateDocument('sales', loadedWebOrderId, {
           ...saleData,
-          status_pedido: esAbono ? 'entregado' : (loadedOrder?.status_pedido || 'pendiente'),
-          pagada: esAbono ? true : (totalPaidUSD >= totalUSD - 0.01)
+          status_pedido: finalStatus,
+          pagada: isFullyPaid
         });
         if (esAbono) {
           addToast('success', 'Abono Reportado Validado y Procesado Exitosamente');
