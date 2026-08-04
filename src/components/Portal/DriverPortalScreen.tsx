@@ -192,7 +192,7 @@ export default function DriverPortalScreen() {
         status: 'pendiente'
       };
       
-      await addDocument('cierres', cierreData);
+      await addDocument('cierres_caja', cierreData);
       
       addToast('success', 'Cierre de jornada enviado a verificación.');
       setShowClosureModal(false);
@@ -439,10 +439,18 @@ if (!user || user.role !== 'repartidor') {
             </button>
             <button onClick={async () => {
               try {
+                const storeParam = new URLSearchParams(window.location.search).get('store');
+                const savedStore = localStorage.getItem('activeStoreId');
+                const storeToKeep = storeParam || savedStore || 'kalu-queso-sanjuan';
+
                 setUser(null);
                 localStorage.removeItem('kalu_current_user');
                 localStorage.removeItem('kalu_pin_verified');
+                
+                // Redirigir a Multitienda
+                window.history.replaceState(null, '', '/');
                 await auth.signOut();
+                window.location.reload();
               } catch(e) {}
             }} className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:bg-white/10 transition-colors">
               <LogOut size={16} />

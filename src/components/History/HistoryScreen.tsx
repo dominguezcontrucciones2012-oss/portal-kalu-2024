@@ -16,13 +16,14 @@ import { subscribeToCollection } from '../../lib/dbUtils';
 import { type Sale } from '../../types';
 import { motion } from 'motion/react';
 import SaleDetailsModal from './SaleDetailsModal';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastProvider';
 import { useAuth } from '../../contexts/AuthProvider';
 import SupervisorCodeModal from '../common/SupervisorCodeModal';
 
 const HistoryScreen: React.FC = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [search, setSearch] = useState((location.state as any)?.searchQuery || '');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -131,47 +132,71 @@ const HistoryScreen: React.FC = () => {
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
-          <h1 className="text-3xl font-black text-white flex items-center gap-3">
-            <Receipt className="text-[#3498db]" /> HISTORIAL DE VENTAS
-          </h1>
-          <p className="text-gray-400 text-sm">Registro permanente de todas las operaciones</p>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={handleExport} className="bg-white/5 hover:bg-white/10 text-gray-300 font-bold py-3 px-6 rounded-2xl border border-white/10 transition-all flex items-center gap-2 text-sm">
-            <Download size={18} /> EXPORTAR EXCEL
+    // Reducimos padding superior al mínimo (pt-1) para pegarlo bien arriba
+    <div className="min-h-screen text-white p-4 md:p-6 pt-1 md:pt-1 transition-all duration-300">
+      
+      {/* CABECERA: Botón + Ícono + Título todo en la misma línea flex */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-3">
+        <div className="flex items-center gap-3">
+          
+          {/* BOTÓNSITO DE VOLVER (En la misma línea) */}
+          <button 
+            onClick={() => navigate(-1)}
+            title="Volver atrás"
+            className="w-9 h-9 flex items-center justify-center bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-400 rounded-full transition-all border border-cyan-500/30 shrink-0"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
+            </svg>
           </button>
+
+          {/* TÍTULO Y SUBTÍTULO */}
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="bg-cyan-500/20 text-cyan-400 p-1 rounded-lg text-lg">💵</span>
+              <h1 className="text-2xl md:text-3xl font-black tracking-wide uppercase leading-none">
+                HISTORIAL DE VENTAS
+              </h1>
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Registro permanente de todas las operaciones
+            </p>
+          </div>
+
         </div>
+
+        {/* Botón Exportar (Mantenido a la derecha) */}
+        <button onClick={handleExport} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-xl text-xs font-semibold border border-slate-700 transition-all self-start md:self-auto">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          EXPORTAR EXCEL
+        </button>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white/5 border border-white/10 p-6 rounded-[2.5rem] flex flex-wrap gap-4 items-end">
+      {/* BLOQUE DE FILTROS (Pegaito inmediatamente abajo) */}
+      <div className="bg-[#112d59]/80 backdrop-blur-md p-4 rounded-2xl border border-slate-700/50 shadow-lg mb-6 flex flex-wrap gap-4 items-end">
         <div className="flex-1 min-w-[200px] space-y-2">
-          <label className="text-[10px] font-black text-gray-500 uppercase px-2 tracking-widest">Filtrar por Cliente o Venta</label>
+          <label className="text-[10px] font-black text-slate-400 uppercase px-2 tracking-widest">Filtrar por Cliente o Venta</label>
           <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input 
               type="text" 
               placeholder="Nombre del cliente o ID..."
-              className="w-full bg-black/20 border border-white/10 rounded-2xl py-3 pl-12 pr-4 focus:outline-none focus:border-[#3498db] text-sm"
+              className="w-full bg-slate-900/50 border border-slate-700 rounded-xl py-2.5 pl-12 pr-4 focus:outline-none focus:border-cyan-500 text-sm text-white placeholder-slate-500 transition-colors"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
         </div>
         <div className="space-y-2 text-right">
-          <label className="text-[10px] font-black text-gray-500 uppercase px-2 tracking-widest">Desde</label>
-          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="bg-black/20 border border-white/10 rounded-xl py-3 px-4 focus:outline-none text-sm" />
+          <label className="text-[10px] font-black text-slate-400 uppercase px-2 tracking-widest">Desde</label>
+          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="bg-slate-900/50 border border-slate-700 rounded-xl py-2.5 px-4 focus:outline-none focus:border-cyan-500 text-sm text-white transition-colors" />
         </div>
         <div className="space-y-2 text-right">
-          <label className="text-[10px] font-black text-gray-500 uppercase px-2 tracking-widest">Hasta</label>
-          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="bg-black/20 border border-white/10 rounded-xl py-3 px-4 focus:outline-none text-sm" />
+          <label className="text-[10px] font-black text-slate-400 uppercase px-2 tracking-widest">Hasta</label>
+          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="bg-slate-900/50 border border-slate-700 rounded-xl py-2.5 px-4 focus:outline-none focus:border-cyan-500 text-sm text-white transition-colors" />
         </div>
-        <button onClick={() => {}} className="bg-[#3498db] hover:bg-[#2980b9] text-white font-bold h-[46px] px-6 rounded-2xl transition-all flex items-center justify-center">
-          <Filter size={18} />
-        </button>
       </div>
 
       {/* Sales List */}
@@ -224,16 +249,18 @@ const HistoryScreen: React.FC = () => {
                 >
                   <Eye size={18} className="group-hover/btn:scale-110 transition-transform" />
                 </button>
-                <button 
-                  onClick={() => {
-                    setSaleToDelete(sale);
-                    setIsSuperModalOpen(true);
-                  }}
-                  className="w-12 h-10 rounded-xl bg-red-500/10 hover:bg-red-500 transition-all flex items-center justify-center group/btn text-red-400 hover:text-white border border-red-500/20"
-                  title="Anular/Eliminar Venta"
-                >
-                  <Trash2 size={18} className="group-hover/btn:scale-110 transition-transform" />
-                </button>
+                {user?.role !== 'cajero' && (
+                  <button 
+                    onClick={() => {
+                      setSaleToDelete(sale);
+                      setIsSuperModalOpen(true);
+                    }}
+                    className="w-12 h-10 rounded-xl bg-red-500/10 hover:bg-red-500 transition-all flex items-center justify-center group/btn text-red-400 hover:text-white border border-red-500/20"
+                    title="Anular/Eliminar Venta"
+                  >
+                    <Trash2 size={18} className="group-hover/btn:scale-110 transition-transform" />
+                  </button>
+                )}
               </div>
             </div>
           </motion.div>

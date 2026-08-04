@@ -25,30 +25,49 @@ service cloud.firestore {
         'dominguezconstrucciones@gmail.com'
       ];
     }
-    function isStaff() { return isMasterAdmin() || hasRole('admin') || hasRole('dueno') || hasRole('supervisor') || hasRole('cajero') || hasRole('repartidor'); }
+    function isSuperAdmin() { return isMasterAdmin() || hasRole('superadmin'); }
+    function isStaff() { return isSuperAdmin() || hasRole('admin') || hasRole('dueno') || hasRole('supervisor') || hasRole('cajero') || hasRole('repartidor'); }
     function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function hasStoreAccess(targetStoreId) {
+      let data = getUserData();
+      return isSuperAdmin() || (data != null && data.storeId == targetStoreId);
+    }
     
     // Validation Helpers
     function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
 
-    // Global Safety Net
+    // Global Safety Net (TEMPORAL: ABIERTO PARA DIAGNÓSTICO)
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if true;
+    }
+
+    // Stores (Multi-tenant)
+    match /stores/{storeId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Administradores (Para validacion de login)
+    match /administradores/{adminId} {
+      allow read: if true;
+      allow write: if isSignedIn();
     }
 
     // User Profiles
     match /users/{userId} {
-      allow read, write: if isSignedIn();
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if isSignedIn();
     }
 
     // Products
     match /products/{productId} {
       allow read: if true;
-      allow create: if isStaff() && isValidProduct(incoming()) && isValidId(productId);
-      allow update: if isSignedIn();
-      allow delete: if hasRole('admin') || hasRole('dueno');
+      allow create: if isStaff() && isValidProduct(incoming()) && isValidId(productId) && hasStoreAccess(incoming().storeId);
+      allow update: if hasStoreAccess(existing().storeId) && hasStoreAccess(incoming().storeId);
+      allow delete: if (hasRole('admin') || hasRole('dueno') || isSuperAdmin()) && hasStoreAccess(existing().storeId);
       
       function isValidProduct(data) {
         return data.keys().hasAll(['codigo', 'nombre', 'costo_usd', 'precio_normal_usd', 'stock']) &&
@@ -58,7 +77,9 @@ service cloud.firestore {
 
     // Clients
     match /clients/{clientId} {
-      allow read, write: if isSignedIn();
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if isSignedIn();
     }
 
     // Antispam (solo escritura desde el backend/admin)
@@ -74,7 +95,8 @@ service cloud.firestore {
 
     // Sales
     match /sales/{saleId} {
-      allow read, write: if isSignedIn();
+      allow create: if true;
+      allow read, update, delete: if isSignedIn();
     }
 
     // Mensajes
@@ -118,7 +140,9 @@ service cloud.firestore {
     // Colecciones de Contabilidad y Operaciones (Acceso completo para Staff)
     match /compras_mercancia/{id} { allow read, write: if isStaff(); }
     match /providers/{id} { allow read, write: if isStaff(); }
-    match /ventas_pausadas/{id} { allow read, write: if isStaff(); }
+    match /ventas_pausadas/{document=**} { allow read, write: if isSignedIn(); }
+    match /paused_sales/{document=**} { allow read, write: if isSignedIn(); }
+    match /open_tabs/{document=**} { allow read, write: if isSignedIn(); }
     match /asientos/{id} { allow read, write: if isStaff(); }
     match /inventory_audit/{id} { allow read, write: if isStaff(); }
     match /gastos/{id} { allow read, write: if isStaff(); }
@@ -136,8 +160,7 @@ service cloud.firestore {
     
     // Configuración Global
     match /configuracion/{id} {
-      allow read: if true;
-      allow write: if isStaff();
+      allow read, write: if isSignedIn();
     }
     
     // Debug Logs

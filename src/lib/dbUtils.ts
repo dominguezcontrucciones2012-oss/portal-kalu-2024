@@ -12,13 +12,33 @@ import {
   serverTimestamp,
   increment,
   onSnapshot,
+  getDocFromServer, 
+  initializeFirestore, 
+  persistentLocalCache, 
+  persistentSingleTabManager, 
+  limit, 
   orderBy,
-  limit,
   runTransaction
 } from 'firebase/firestore';
 import { db, isMock, storage } from './firebase';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
+
+// Helper para mapear la billetera del cliente según la tienda activa
+export const mapClientWallet = (clientData: any, storeId?: string) => {
+  if (!clientData) return clientData;
+  const sid = storeId || getActiveStoreId();
+  const wallet = clientData.wallets?.[sid] || { saldo_usd: clientData.saldo_usd || 0, puntos: clientData.puntos || 0, saldo_pendiente_usd: clientData.saldo_pendiente_usd || 0 };
+  return { ...clientData, saldo_usd: wallet.saldo_usd, puntos: wallet.puntos, saldo_pendiente_usd: wallet.saldo_pendiente_usd };
+};
+
+// Helper para mapear saldos de personal (productores/repartidores)
+export const mapUserWallet = (userData: any, storeId?: string) => {
+  if (!userData) return userData;
+  const sid = storeId || getActiveStoreId();
+  const wallet = userData.wallets?.[sid] || { saldo_pendiente_usd: userData.saldo_pendiente_usd || 0 };
+  return { ...userData, saldo_pendiente_usd: wallet.saldo_pendiente_usd };
+};
 
 const uploadBase64IfPresent = async (dataObj: any) => {
   if (isMock) return dataObj;
@@ -125,6 +145,39 @@ export async function seedDatabase() {
  * Helpers genéricos para Firestore
  */
 
+export const getActiveStoreId = () => {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    const storeParam = params.get('store');
+    if (storeParam) {
+      localStorage.setItem('activeStoreId', storeParam);
+      return storeParam;
+    }
+    const savedStore = localStorage.getItem('activeStoreId');
+    if (savedStore) {
+      params.set('store', savedStore);
+      const newUrl = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
+      window.history.replaceState(null, '', newUrl);
+      return savedStore;
+    }
+    
+    // Si no hay parámetro ni caché, fijamos la tienda principal por defecto
+    localStorage.setItem('activeStoreId', 'kalu-queso-sanjuan');
+    params.set('store', 'kalu-queso-sanjuan');
+    const newUrlFallback = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
+    window.history.replaceState(null, '', newUrlFallback);
+    return 'kalu-queso-sanjuan';
+  }
+  return 'kalu-queso-sanjuan';
+};
+
+export const withStore = (data: any) => {
+  if (!data.storeId) {
+    return { ...data, storeId: getActiveStoreId() };
+  }
+  return data;
+};
+
 export const subscribeToCollection = (collectionName: string, callback: (data: any[]) => void) => {
   if (isMock) {
     const fetchCollection = () => {
@@ -149,10 +202,24 @@ export const subscribeToCollection = (collectionName: string, callback: (data: a
   let retryCount = 0;
 
   const setupListener = () => {
-    unsub = onSnapshot(collection(db, collectionName), 
+    const storeId = getActiveStoreId();
+    let q;
+    const collectionsToFilter = ['products', 'sales', 'ventas_pausadas', 'cierres_caja', 'movimientos_productores', 'asientos', 'inventory_audit', 'gastos', 'compras_mercancia', 'providers', 'mensajes', 'sorteos_activos', 'open_tabs', 'quejas'];
+    if (collectionsToFilter.includes(collectionName)) {
+      q = query(collection(db, collectionName), where('storeId', '==', storeId));
+    } else {
+      q = query(collection(db, collectionName));
+    }
+
+    unsub = onSnapshot(q, 
       (snapshot) => {
         retryCount = 0; // reset on success
-        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const data = snapshot.docs.map(doc => {
+           let docData = { ...doc.data(), id: doc.id };
+           if (collectionName === 'clients') docData = mapClientWallet(docData);
+           if (collectionName === 'users') docData = mapUserWallet(docData);
+           return docData;
+        });
         // Si viene del caché y está vacío, ignoramos para no borrar la UI mientras conecta (especialmente útil si la red es lenta)
         if (snapshot.metadata.fromCache && data.length === 0) {
           console.log(`Cache vacío para ${collectionName}, esperando red...`);
@@ -205,7 +272,9 @@ export const subscribeToDocument = (collectionName: string, id: string, callback
 
   return onSnapshot(doc(db, collectionName, id), (snapshot) => {
     if (snapshot.exists()) {
-      callback({ id: snapshot.id, ...snapshot.data() });
+      let docData = { id: snapshot.id, ...snapshot.data() };
+      if (collectionName === 'clients') docData = mapClientWallet(docData);
+      callback(docData);
     } else {
       callback(null);
     }
@@ -234,7 +303,7 @@ export const subscribeToUserSales = (clientIds: string[], callback: (data: any[]
 
   const q = query(collection(db, 'sales'), where('cliente_id', 'in', clientIds));
   return onSnapshot(q, (snapshot) => {
-    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
     callback(data);
   });
 };
@@ -265,7 +334,7 @@ export const subscribeToUserMessages = (clientIds: string[], callback: (data: an
   
   const q = query(collection(db, 'mensajes'), where('cliente_id', 'in', idsToSearch));
   return onSnapshot(q, (snapshot) => {
-    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
     callback(data);
   });
 };
@@ -333,7 +402,7 @@ export const updateStock = async (productId: string, quantity: number, motivo: s
 
   // Auditoría automática según el modelo AuditoriaInventario
   try {
-    await addDocument('auditoria_inventario', {
+    await addDocument('inventory_audit', {
       producto_id: productId,
       usuario_id: userId,
       tipo_movimiento: quantity > 0 ? 'SALIDA' : 'ENTRADA',
@@ -351,14 +420,22 @@ export const updateStock = async (productId: string, quantity: number, motivo: s
  */
 export const getAppConfig = async () => {
   if (isMock) return null;
-  const configRef = doc(db, 'configuracion', 'global');
-  const snap = await getDoc(configRef);
+  const storeId = getActiveStoreId();
+  let configRef = doc(db, 'configuracion', storeId);
+  let snap = await getDoc(configRef);
+  
+  if (!snap.exists() && storeId === 'kalu-queso-sanjuan') {
+    configRef = doc(db, 'configuracion', 'global');
+    snap = await getDoc(configRef);
+  }
+  
   return snap.exists() ? snap.data() : null;
 };
 
 export const updateAppConfig = async (config: any) => {
-  return setDoc(doc(db, 'configuracion', 'global'), {
-    ...config,
+  const { id, ...configData } = config;
+  return setDoc(doc(db, 'configuracion', getActiveStoreId()), {
+    ...configData,
     updatedAt: serverTimestamp()
   });
 };
@@ -416,6 +493,7 @@ export const createClient = async (clientData: any, authUid?: string) => {
 
   // 1. Crear el registro de cliente para el negocio
   let docId = authUid;
+  const storeId = getActiveStoreId();
   
   const clientDataToSave = {
     nombre: clientData.nombre,
@@ -423,16 +501,23 @@ export const createClient = async (clientData: any, authUid?: string) => {
     email: clientData.email || null,
     telefono: clientData.telefono || '',
     direccion: clientData.direccion || '',
-    saldo_usd: clientData.saldo_usd || 0,
-    puntos: clientData.puntos || 0,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
+    role: clientData.role || 'cliente',
+    es_obrero: clientData.es_obrero || false,
+    wallets: {
+      [storeId]: {
+        saldo_usd: clientData.saldo_usd || 0,
+        puntos: clientData.puntos || 0,
+        saldo_pendiente_usd: clientData.saldo_pendiente_usd || 0
+      }
+    },
+    origen_store_id: storeId
   };
-
+  
+  const clientRef = collection(db, 'clients');
+  
   if (docId) {
     await setDoc(doc(db, 'clients', docId), clientDataToSave);
   } else {
-    const clientRef = collection(db, 'clients');
     const docRef = await addDoc(clientRef, clientDataToSave);
     docId = docRef.id;
   }
@@ -455,6 +540,10 @@ export const createClient = async (clientData: any, authUid?: string) => {
   });
 
   return docId;
+};
+
+export const ensureClientExistsForStore = async (user: any) => {
+  return user.clientId || user.id;
 };
 
 export const checkPinUnique = async (pin: string): Promise<boolean> => {
@@ -537,7 +626,7 @@ export const autoCancelExpiredOrders = async () => {
 
   // Lógica para Firebase Real
   try {
-    const q = query(collection(db, 'sales'), where('origen', '==', 'web'), where('status_pedido', '==', 'pendiente'));
+    const q = query(collection(db, 'sales'), where('storeId', '==', getActiveStoreId()), where('origen', '==', 'web'), where('status_pedido', '==', 'pendiente'));
     const snapshot = await getDocs(q);
     const now = Date.now();
     const twelveHoursMs = 12 * 60 * 60 * 1000;
@@ -587,9 +676,10 @@ export const createSale = async (saleData: any) => {
   }
 
   const salesRef = collection(db, 'sales');
-  const finalSaleData = await uploadBase64IfPresent(saleData);
+  const finalSaleData = withStore(saleData);
+  const dataWithImage = await uploadBase64IfPresent(finalSaleData);
   const docRef = await addDoc(salesRef, {
-    ...finalSaleData,
+    ...dataWithImage,
     codigo_pedido,
     createdAt: serverTimestamp()
   });
@@ -610,7 +700,8 @@ export const createSale = async (saleData: any) => {
         sale_id: docRef.id,
         cliente_id: saleData.cliente_id || null,
         cliente_nombre_censurado: nombreCensurado,
-        fecha: new Date().toISOString()
+        fecha: new Date().toISOString(),
+        storeId: getActiveStoreId()
       });
     } catch (err) {
       console.error("Error creando ticket de sorteo:", err);
@@ -643,28 +734,20 @@ export const createSale = async (saleData: any) => {
 
 export const addDocument = async (collectionName: string, data: any) => {
   if (isMock) {
-    try {
-      const res = await fetch(`/api/db/${collectionName}`);
-      const items = await res.json();
-      const newId = `${collectionName.charAt(0)}${items.length + 1}_${Date.now()}`;
-      const newItem = { ...data, id: newId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-      
-      await fetch(`/api/db/${collectionName}/${newId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newItem)
-      });
-      return newId;
-    } catch (e) {
-      console.error(e);
-      throw e;
-    }
+    const response = await fetch(`/api/db/${collectionName}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!response.ok) throw new Error('Error al añadir documento');
+    return await response.json();
   }
-
-  const colRef = collection(db, collectionName);
-  const finalData = await uploadBase64IfPresent(data);
-  const docRef = await addDoc(colRef, {
-    ...finalData,
+  
+  const finalData = withStore(data);
+  const dataWithImage = await uploadBase64IfPresent(finalData);
+  const { id, ...saveData } = dataWithImage;
+  const docRef = await addDoc(collection(db, collectionName), {
+    ...saveData,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   });
@@ -688,23 +771,26 @@ export const getDocument = async (collectionName: string, id: string) => {
   const docRef = doc(db, collectionName, id);
   const docSnap = await getDoc(docRef);
   if (docSnap.exists()) {
-    return { id: docSnap.id, ...docSnap.data() };
+    let docData = { id: docSnap.id, ...docSnap.data() };
+    if (collectionName === 'clients') docData = mapClientWallet(docData);
+    if (collectionName === 'users') docData = mapUserWallet(docData);
+    return docData;
   }
   return null;
 };
 
 
-export const updateDocument = async (collectionName: string, id: string, data: any) => {
+export const updateDocument = async (collectionName: string, docId: string, data: any) => {
   if (isMock) {
     try {
-      const getRes = await fetch(`/api/db/${collectionName}/${id}`);
+      const getRes = await fetch(`/api/db/${collectionName}/${docId}`);
       let current = {};
       if (getRes.ok) {
         current = await getRes.json();
       }
-      const updated = { ...current, ...data, id, updatedAt: new Date().toISOString() };
+      const updated = { ...current, ...data, id: docId, updatedAt: new Date().toISOString() };
       
-      await fetch(`/api/db/${collectionName}/${id}`, {
+      await fetch(`/api/db/${collectionName}/${docId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated)
@@ -715,10 +801,47 @@ export const updateDocument = async (collectionName: string, id: string, data: a
     return;
   }
 
-  const docRef = doc(db, collectionName, id);
-  const finalData = await uploadBase64IfPresent(data);
+  const docRef = doc(db, collectionName, docId);
+  const finalData = (collectionName === 'clients' || collectionName === 'users') ? data : withStore(data);
+  const dataWithImage = await uploadBase64IfPresent(finalData);
+  const { id: _, ...updateData } = dataWithImage;
+  
+  if (collectionName === 'clients') {
+    const storeId = getActiveStoreId();
+    const currentSnap = await getDoc(docRef);
+    const currentData = currentSnap.exists() ? currentSnap.data() : {};
+    const wallets = currentData.wallets || {};
+    
+    const existingWallet = wallets[storeId] || { saldo_usd: currentData.saldo_usd || 0, puntos: currentData.puntos || 0, saldo_pendiente_usd: currentData.saldo_pendiente_usd || 0 };
+    wallets[storeId] = {
+      saldo_usd: updateData.saldo_usd !== undefined ? updateData.saldo_usd : existingWallet.saldo_usd,
+      puntos: updateData.puntos !== undefined ? updateData.puntos : existingWallet.puntos,
+      saldo_pendiente_usd: updateData.saldo_pendiente_usd !== undefined ? updateData.saldo_pendiente_usd : existingWallet.saldo_pendiente_usd
+    };
+    
+    updateData.wallets = wallets;
+    delete updateData.saldo_usd;
+    delete updateData.puntos;
+    delete updateData.saldo_pendiente_usd;
+  }
+
+  if (collectionName === 'users') {
+    const storeId = getActiveStoreId();
+    const currentSnap = await getDoc(docRef);
+    const currentData = currentSnap.exists() ? currentSnap.data() : {};
+    const wallets = currentData.wallets || {};
+    
+    const existingWallet = wallets[storeId] || { saldo_pendiente_usd: currentData.saldo_pendiente_usd || 0 };
+    wallets[storeId] = {
+      saldo_pendiente_usd: updateData.saldo_pendiente_usd !== undefined ? updateData.saldo_pendiente_usd : existingWallet.saldo_pendiente_usd
+    };
+    
+    updateData.wallets = wallets;
+    delete updateData.saldo_pendiente_usd;
+  }
+  
   await updateDoc(docRef, {
-    ...finalData,
+    ...updateData,
     updatedAt: serverTimestamp()
   });
 };
@@ -981,9 +1104,9 @@ export const getTodaySales = async () => {
   startOfDay.setHours(0, 0, 0, 0);
   
   const salesRef = collection(db, 'sales');
-  const q = query(salesRef, where('createdAt', '>=', startOfDay));
+  const q = query(salesRef, where('storeId', '==', getActiveStoreId()), where('createdAt', '>=', startOfDay));
   const snapshot = await getDocs(q);
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
 };
 
 export const getClosures = async () => {
@@ -998,10 +1121,14 @@ export const getClosures = async () => {
     }
     return [];
   }
-  const colRef = collection(db, 'cierres_caja');
-  const q = query(colRef);
+  const q = query(
+    collection(db, 'cierres_caja'),
+    where('storeId', '==', getActiveStoreId()),
+    orderBy('fecha', 'desc'),
+    limit(30)
+  );
   const snapshot = await getDocs(q);
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
 };
 
 /**
@@ -1011,21 +1138,22 @@ export const addProductorMovement = async (mov: any) => {
   return addDocument('movimientos_productores', mov);
 };
 
-export const getProductorMovements = async (productorId: string) => {
+export const getProductorMovements = (productorId: string) => {
   if (isMock) {
     try {
-      const res = await fetch('/api/db/movimientos_productores');
-      if (res.ok) {
-        const movs = await res.json();
-        return movs.filter((m: any) => m.proveedor_id === productorId);
-      }
+      const res = fetch('/api/db/movimientos_productores').then(r => r.json());
+      return res.then((movs: any) => movs.filter((m: any) => m.proveedor_id === productorId));
     } catch (e) {
       console.error(e);
     }
-    return [];
+    return Promise.resolve([]);
   }
   const colRef = collection(db, 'movimientos_productores');
-  const q = query(colRef, where('proveedor_id', '==', productorId));
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  const q = query(
+    colRef,
+    where('storeId', '==', getActiveStoreId()),
+    where('proveedor_id', '==', productorId),
+    orderBy('fecha', 'asc')
+  );
+  return getDocs(q).then(snapshot => snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
 };

@@ -23,13 +23,26 @@ const ProfileScreen: React.FC = () => {
   const { user, setUser } = useAuth();
 
   const handleLogout = () => {
+    const storeParam = new URLSearchParams(window.location.search).get('store');
+    const savedStore = localStorage.getItem('activeStoreId');
+    const storeToKeep = storeParam || savedStore || 'kalu-queso-sanjuan';
+    const currentRole = user?.role;
+
     setUser(null);
     localStorage.removeItem('kalu_current_user');
     localStorage.removeItem('kalu_pin_verified');
     localStorage.removeItem('kalu_remembered_user');
     localStorage.removeItem('kalu_bio_last_user_email');
-    signOut(auth);
-    window.location.href = '/';
+    
+    if (currentRole === Role.SUPERADMIN || currentRole === Role.ADMIN || currentRole === Role.STAFF) {
+      window.history.replaceState(null, '', `/admin/login?store=${storeToKeep}`);
+    } else {
+      window.history.replaceState(null, '', '/');
+    }
+    
+    signOut(auth).then(() => {
+      window.location.reload();
+    });
   };
 
   return (

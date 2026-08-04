@@ -33,7 +33,7 @@
   },
   {
     "id": "c4",
-    "nombre": "Juan Carlos Domínguez ",
+    "nombre": "Juan Carlos Dom\u00ednguez ",
     "cedula": "15082352",
     "telefono": "04243068286",
     "direccion": "Carretera nacional lomas del pica pica ",
@@ -50,5 +50,23 @@
     "saldo_usd": 0,
     "puntos": 55,
     "updatedAt": "2026-05-27T03:25:00.250Z"
+  },
+  {
+    "id": "client_v15123456",
+    "nombre": "Test VIP 1",
+    "cedula": "V-15123456",
+    "correo": "test1@kalu.com",
+    "pin": "112233",
+    "saldo_usd": 50,
+    "limite_credito_usd": 100
+  },
+  {
+    "id": "client_v20987654",
+    "nombre": "Test VIP 2",
+    "cedula": "V-20987654",
+    "correo": "test2@kalu.com",
+    "pin": "445566",
+    "saldo_usd": 100,
+    "limite_credito_usd": 200
   }
 ]

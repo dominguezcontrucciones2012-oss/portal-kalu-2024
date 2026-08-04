@@ -8,7 +8,9 @@ interface AuthContextType {
   loading: boolean;
   isAdmin: boolean;
   isStaff: boolean;
+  authError: string | null;
   setUser: (user: User | null) => void;
+  retryAuth: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -16,12 +18,22 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   isAdmin: false,
   isStaff: false,
+  authError: null,
   setUser: () => {},
+  retryAuth: () => {},
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUserState] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+
+  const retryAuth = () => {
+    setAuthError(null);
+    setLoading(true);
+    setRetryCount(prev => prev + 1);
+  };
 
   const setUser = (u: User | null) => {
     setUserState(u);
@@ -38,6 +50,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
+    setAuthError(null);
     // 1. Intentar cargar usuario desde LocalStorage primero (para persistencia de PIN o Mock)
     const savedUser = localStorage.getItem('kalu_current_user');
     if (savedUser) {
@@ -61,17 +74,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    // Red de seguridad: si Firebase tarda más de 8 segundos, liberar el loading
-    const safetyTimeout = setTimeout(() => {
-      setLoading(false);
-    }, 8000);
+    // Red de seguridad: si Firebase tarda más de 3 segundos, liberar el loading
+    const timer = setTimeout(() => {
+      setLoading(false); // FORZAR LA SALIDA DE LA PANTALLA AZUL
+    }, 3000);
 
       const unsubscribe = onAuthStateChangedCustom(auth, async (firebaseUser: any) => {
-        clearTimeout(safetyTimeout);
+        clearTimeout(timer);
         if (firebaseUser) {
           // --- CONTROL DE VERIFICACIÓN DE PIN ---
           const pinVerified = localStorage.getItem('kalu_pin_verified') === 'true';
-          if (!pinVerified) {
+          const savedUser = localStorage.getItem('kalu_current_user');
+          const parsedSaved = savedUser ? JSON.parse(savedUser) : null;
+          const isMasterRole = ['superadmin', 'dueno'].includes(parsedSaved?.role);
+          
+          if (!pinVerified && !isMasterRole) {
             setUserState(null);
             setLoading(false);
             return;
@@ -79,29 +96,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // ─────────────────────────────────────
 
           // Workaround for Firebase Auth -> Firestore rules propagation race condition
-          // Wait 1.2s before attempting to read protected documents
-          await new Promise(r => setTimeout(r, 1200));
+          // Reduced to 200ms to avoid UI flashes during login
+          await new Promise(r => setTimeout(r, 200));
           
           try {
             let userDoc: any = null;
             let retries = 0;
             let success = false;
             
-            while (retries < 5 && !success) {
+            while (retries < 1 && !success) {
               try {
                 const userDocPromise = getDoc(doc(db, 'users', firebaseUser.uid));
                 const timeoutPromise = new Promise((_, reject) => 
-                  setTimeout(() => reject(new Error("Timeout")), 4000)
+                  setTimeout(() => reject(new Error("Timeout")), 2000)
                 );
                 userDoc = await Promise.race([userDocPromise, timeoutPromise]);
                 
                 if (!userDoc || !userDoc.exists()) {
                   if (firebaseUser.email) {
                     const cleanEmail = firebaseUser.email.trim().toLowerCase();
-                    const q = query(collection(db, 'users'), where('email', '==', cleanEmail));
-                    const snap = await getDocs(q);
-                    if (!snap.empty) {
-                      userDoc = snap.docs[0] as any;
+                    // Primero buscar en administradores (prioridad)
+                    const qAdmin = query(collection(db, 'administradores'), where('email', '==', cleanEmail));
+                    const snapAdmin = await getDocs(qAdmin);
+                    if (!snapAdmin.empty) {
+                      userDoc = snapAdmin.docs[0] as any;
+                    } else {
+                      // Luego buscar en users
+                      const q = query(collection(db, 'users'), where('email', '==', cleanEmail));
+                      const snap = await getDocs(q);
+                      if (!snap.empty) {
+                        userDoc = snap.docs[0] as any;
+                      }
                     }
                   }
                 }
@@ -109,8 +134,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 success = true;
               } catch (err) {
                 retries++;
-                if (retries >= 5) throw err;
-                await new Promise(r => setTimeout(r, 1000));
+                if (retries >= 1) throw err;
+                await new Promise(r => setTimeout(r, 500));
               }
             }
 
@@ -133,29 +158,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 email: firebaseUser.email || undefined,
                 avatar: firebaseUser.photoURL || undefined,
                 cedula: profile.cedula,
-                clientId: profile.clientId
+                clientId: profile.clientId,
+                storeId: profile.storeId
               } as User;
               setUserState(fullUser);
               localStorage.setItem('kalu_current_user', JSON.stringify(fullUser));
+              if (profile.storeId) {
+                localStorage.setItem('activeStoreId', profile.storeId);
+              }
             } else {
               // Si el usuario no existe, NO lo creamos automáticamente. 
               // Dejamos que LoginScreen.tsx maneje esto (mostrará que no está vinculado).
               setUserState(null);
               localStorage.removeItem('kalu_current_user');
             }
-          } catch (e) {
+          } catch (e: any) {
             console.error("Error crítico en AuthProvider:", e);
-            const safeEmail = firebaseUser.email ? firebaseUser.email.trim().toLowerCase() : '';
-            const isAdmin = ['dominguezcontrucciones2012@gmail.com', 'dominguezconstrucciones2012@gmail.com', 'domingueconstrucciones@gmail.com', 'dominguezconstrucciones@gmail.com'].includes(safeEmail);
-            
-            const fullUser = {
-              id: firebaseUser.uid,
-              username: firebaseUser.displayName || 'Usuario',
-              role: isAdmin ? Role.ADMIN : Role.CLIENTE,
-              email: firebaseUser.email || undefined,
-            } as User;
-            setUserState(fullUser);
-            localStorage.setItem('kalu_current_user', JSON.stringify(fullUser));
+            setAuthError(e.message || "Error conectando con el servidor. Verifica tu conexión a internet.");
+            setUserState(null);
           }
         } else {
           const saved = localStorage.getItem('kalu_current_user');
@@ -200,10 +220,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           localStorage.removeItem('kalu_pin_verified');
         }
         setLoading(false);
+        clearTimeout(timer);
       });
 
-      return unsubscribe;
-  }, []);
+      return () => {
+        clearTimeout(timer);
+        unsubscribe();
+      };
+  }, [retryCount]);
 
   useEffect(() => {
     const targetUid = user?.id || user?.clientId;
@@ -274,9 +298,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const isStaff = user ? [Role.ADMIN, Role.DUENO, Role.SUPERVISOR, Role.CAJERO].includes(user.role) : false;
   const isAdmin = user?.role === Role.ADMIN || user?.role === Role.DUENO;
-
+      
   return (
-    <AuthContext.Provider value={{ user, loading, isAdmin, isStaff, setUser }}>
+    <AuthContext.Provider value={{ user, loading, isAdmin, isStaff, authError, setUser, retryAuth }}>
       {children}
     </AuthContext.Provider>
   );

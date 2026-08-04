@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Package, MessageCircle, Printer, CheckCircle, Check, Clock, Truck, X, AlertTriangle, ScanLine } from 'lucide-react';
-import { subscribeToCollection, updateDocument, getLatestTasa, getAppConfig, getDocument } from '../../lib/dbUtils';
+import { Package, MessageCircle, Printer, CheckCircle, Check, Clock, Truck, X, AlertTriangle, ScanLine, ArrowLeft } from 'lucide-react';
+import { subscribeToCollection, updateDocument, getLatestTasa, getAppConfig, getDocument, getActiveStoreId } from '../../lib/dbUtils';
 import { formatCurrency, parseDate } from '../../lib/utils';
 import { useToast } from '../../contexts/ToastProvider';
 import { useAuth } from '../../contexts/AuthProvider';
 import CashValidationModal from '../common/CashValidationModal';
+import { useNavigate } from 'react-router-dom';
 
 export default function DispatchScreen() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<any[]>([]);
   const [allSales, setAllSales] = useState<any[]>([]);
   const [drivers, setDrivers] = useState<any[]>([]);
@@ -42,7 +44,7 @@ export default function DispatchScreen() {
     });
 
     const unsubUsers = subscribeToCollection('users', (data) => {
-      const repartidores = data.filter((u: any) => u.role === 'repartidor');
+      const repartidores = data.filter((u: any) => u.role === 'repartidor' && u.storeId === getActiveStoreId());
       setDrivers(repartidores);
     });
 
@@ -406,85 +408,74 @@ export default function DispatchScreen() {
   };
 
   return (
-    <div className="flex-1 p-8 space-y-6 max-h-screen overflow-hidden flex flex-col relative">
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end gap-4">
-        <div className="flex justify-between items-start w-full xl:w-auto">
+    <div className="flex-1 p-6 space-y-4 max-h-screen overflow-hidden flex flex-col relative pt-4 mt-0">
+      {/* FILA 1: CABECERA UNIFICADA */}
+      <div className="flex flex-row justify-between items-center w-full gap-4 overflow-x-auto custom-scrollbar pb-2">
+        
+        {/* 1 y 2: Botón Volver y Título */}
+        <div className="flex items-center gap-4 shrink-0">
+          <button 
+            onClick={() => navigate(-1)}
+            className="p-3 bg-white/5 hover:bg-white/10 rounded-2xl transition-all text-gray-400 hover:text-white shrink-0"
+          >
+            <ArrowLeft size={24} />
+          </button>
+          <h1 className="text-xl lg:text-2xl xl:text-3xl font-black text-white uppercase tracking-tight flex items-center gap-2 whitespace-nowrap">
+            <Package className="text-blue-400" size={28} />
+            PANTALLA DE DESPACHO (KDS)
+          </h1>
+        </div>
+        
+        {/* 3: Entregar con PIN */}
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-2 flex items-center gap-3 shrink-0 ml-auto">
+          <div className="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
+            <ScanLine size={20} />
+          </div>
+          <form onSubmit={handlePinSubmit} className="flex gap-2">
+            <input 
+              type="text" 
+              placeholder="PIN / CÓDIGO" 
+              value={pinInput}
+              onChange={(e) => setPinInput(e.target.value)}
+              className="bg-black/50 border border-white/20 rounded-xl px-4 py-2 text-white font-black tracking-[3px] text-center w-32 xl:w-48 focus:outline-none focus:border-purple-500 transition-colors text-sm"
+            />
+            <button type="submit" className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-xl font-black uppercase text-xs tracking-wider transition-colors">
+              Buscar
+            </button>
+          </form>
+        </div>
+
+        {/* 4: Cajero Automático */}
+        <div className="bg-pink-500/20 border border-pink-500/50 p-2.5 rounded-2xl flex items-center gap-3 animate-pulse shrink-0">
+          <span className="text-2xl">🤖</span>
           <div>
-            <h1 className="text-2xl xl:text-3xl font-black text-white uppercase tracking-tight flex items-center gap-3">
-              <Package className="text-blue-400" size={32} />
-              Pantalla de Despacho (KDS)
-            </h1>
-            <p className="text-gray-400 mt-2 font-bold text-sm">
-              Zona exclusiva para preparadores. Empaca y asigna.
-            </p>
-          </div>
-          
-          {/* Cajero Automático - Movido a la derecha del título en pantallas grandes, o arriba a la derecha */}
-          <div className="hidden md:flex xl:hidden bg-pink-500/20 border border-pink-500/50 p-3 rounded-2xl items-center gap-3 animate-pulse max-w-xs ml-4">
-            <span className="text-2xl">🤖</span>
-            <div>
-              <h4 className="text-pink-400 font-black tracking-widest uppercase text-[10px]">Cajero Automático</h4>
-              <p className="text-pink-200/70 text-[10px] font-bold mt-0.5 leading-tight">El Charbox asignará repartidores automáticamente.</p>
-            </div>
+            <h4 className="text-pink-400 font-black tracking-widest uppercase text-[10px]">Cajero Automático</h4>
+            <p className="text-pink-200/70 text-[10px] font-bold mt-0.5 leading-tight">Charbox activo</p>
           </div>
         </div>
+      </div>
 
-        <div className="flex gap-4 items-center w-full xl:w-auto">
-          {/* Cajero Automático - Pantallas extra grandes */}
-          <div className="hidden xl:flex bg-pink-500/20 border border-pink-500/50 p-3 rounded-2xl items-center gap-3 animate-pulse max-w-xs mr-4 shrink-0">
-            <span className="text-2xl">🤖</span>
-            <div>
-              <h4 className="text-pink-400 font-black tracking-widest uppercase text-xs">Cajero Automático</h4>
-              <p className="text-pink-200/70 text-[10px] font-bold mt-0.5 leading-tight">El Charbox asignará repartidores automáticamente.</p>
-            </div>
-          </div>
-
-          <div className="flex gap-3 overflow-x-auto custom-scrollbar pb-2">
-            {drivers.map(driver => {
-              const driverOrdersEnRuta = allSales.filter(o => o.repartidor_id === driver.id && o.status_pedido === 'efectivo_en_ruta');
-              
-              const today = new Date();
-              today.setHours(0, 0, 0, 0);
-              
-              const driverOrdersToday = allSales.filter(o => {
-                if (o.repartidor_id !== driver.id) return false;
-                if (o.status_pedido !== 'entregado') return false;
-                const orderDate = parseDate(o.createdAt || o.fecha);
-                return orderDate >= today;
-              });
-              
-              if (driverOrdersEnRuta.length === 0 && driverOrdersToday.length === 0) return null;
-              
-              const usd = driverOrdersEnRuta.filter(o => o.metodo_cobro_driver === 'efectivo_usd').reduce((acc, o) => acc + (o.total_usd || 0), 0);
-              const bs = driverOrdersEnRuta.filter(o => o.metodo_cobro_driver === 'efectivo_bs').reduce((acc, o) => acc + ((o.total_usd || 0) * tasaActual), 0);
-
-              return (
-                <div key={driver.id} className={`bg-[#111] border rounded-2xl p-3 flex flex-col gap-2 min-w-[150px] shadow-lg ${driver.isOnline ? 'border-green-500/30 shadow-[0_0_10px_rgba(34,197,94,0.15)]' : 'border-white/10 opacity-70'}`}>
-                  <div className="flex items-center justify-between w-full">
-                    <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1 ${driver.isOnline ? 'text-green-400' : 'text-gray-500'}`}>
-                      <Truck size={10} /> {driver.nombre || driver.username}
-                    </span>
-                    <div className={`w-1.5 h-1.5 rounded-full ${driver.isOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500/50'}`}></div>
-                  </div>
-                  
-                  <div className="bg-white/5 p-1.5 rounded-xl flex justify-between items-center">
-                    <span className="text-[8px] font-bold text-gray-500 uppercase tracking-widest">Entregas</span>
-                    <span className="text-xs font-black text-white">{driverOrdersToday.length}</span>
-                  </div>
-                  
-                  <div className="bg-orange-500/10 border border-orange-500/20 p-1.5 rounded-xl">
-                    <span className="text-[8px] font-bold text-orange-500/70 uppercase tracking-widest block mb-0.5">Efectivo Ruta</span>
-                    <div className="text-xs font-black text-white leading-tight">
-                      {usd > 0 && <div>${usd.toFixed(2)}</div>}
-                      {bs > 0 && <div>Bs {bs.toFixed(2)}</div>}
-                      {usd === 0 && bs === 0 && <span className="text-gray-500 font-bold">$0.00</span>}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+      {/* FILA 2: BARRA DE REPARTIDORES */}
+      <div className="w-full bg-black/40 border border-white/5 rounded-2xl p-3 flex items-center gap-2 overflow-x-auto custom-scrollbar">
+        <h3 className="text-gray-400 font-bold text-[10px] uppercase tracking-widest mr-2 shrink-0">Estado Repartidores:</h3>
+        {drivers.length > 0 ? (
+          drivers.map(d => {
+            const usd = allSales.filter(o => o.repartidor_id === d.id && o.status_pedido === 'efectivo_en_ruta' && o.metodo_cobro_driver === 'efectivo_usd').reduce((acc, o) => acc + (o.total_usd || 0), 0);
+            return (
+              <span key={d.id} className={`px-2 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 border shrink-0 ${d.isOnline ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400/50 border-red-500/20'}`}>
+                {d.isOnline ? (
+                  <><span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span> {d.username} {usd > 0 ? `($${usd.toFixed(2)})` : ''}</>
+                ) : (
+                  <><span className="w-1.5 h-1.5 rounded-full bg-red-500/50"></span> {d.username}</>
+                )}
+              </span>
+            );
+          })
+        ) : (
+          <span className="bg-gray-500/20 text-gray-400 border border-gray-500/30 px-2 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider shrink-0">
+            No hay repartidores
+          </span>
+        )}
       </div>
 
       {cashValidationOrder && (
@@ -515,53 +506,9 @@ export default function DispatchScreen() {
         </div>
       )}
 
-      <div className="flex-1 overflow-auto px-8 pb-8 pt-4 custom-scrollbar">
-        {/* Top Bar for PIN Handover */}
-        <div className="max-w-4xl mx-auto mb-6 bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col md:flex-row items-center gap-4 justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
-              <ScanLine size={24} />
-            </div>
-            <div>
-              <h2 className="text-xl font-black text-white uppercase tracking-wider">Entregar con PIN</h2>
-              <p className="text-gray-400 text-xs mt-1">Escanea el código de barras o escribe el PIN</p>
-            </div>
-          </div>
-          <form onSubmit={handlePinSubmit} className="flex gap-2 w-full md:w-auto">
-            <input 
-              type="text" 
-              placeholder="Ej: 4929" 
-              value={pinInput}
-              onChange={(e) => setPinInput(e.target.value)}
-              className="bg-black/50 border border-white/20 rounded-xl px-4 py-3 text-white font-black tracking-[5px] text-center w-full md:w-48 focus:outline-none focus:border-purple-500 transition-colors"
-            />
-            <button type="submit" className="bg-purple-600 hover:bg-purple-500 text-white px-6 py-3 rounded-xl font-black uppercase text-xs tracking-wider transition-colors">
-              Buscar
-            </button>
-          </form>
-        </div>
-
-        {/* Indicador de Estado de Repartidores */}
-        <div className="max-w-4xl mx-auto mb-6 bg-black/40 border border-white/5 rounded-2xl p-3 flex flex-wrap items-center gap-3 justify-center">
-          <h3 className="text-gray-400 font-bold text-xs uppercase tracking-widest mr-2">Estado de Repartidores:</h3>
-          {drivers.length > 0 ? (
-            drivers.map(d => (
-              <span key={d.id} className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-2 border ${d.isOnline ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-red-500/10 text-red-400/50 border-red-500/20'}`}>
-                {d.isOnline ? (
-                  <><span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span> {d.username} (En Turno)</>
-                ) : (
-                  <><span className="w-2 h-2 rounded-full bg-red-500/50"></span> {d.username} (Offline)</>
-                )}
-              </span>
-            ))
-          ) : (
-            <span className="bg-gray-500/20 text-gray-400 border border-gray-500/30 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider">
-              No hay repartidores
-            </span>
-          )}
-        </div>
-
-        <div className="max-w-7xl mx-auto">
+      {/* ZONA DE PEDIDOS */}
+      <div className="flex-1 overflow-auto custom-scrollbar pb-8">
+        <div className="w-full">
         {orders.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center opacity-30">
             <Package size={80} />

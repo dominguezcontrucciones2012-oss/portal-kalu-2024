@@ -1,15 +1,29 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Menu } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthProvider';
 import { Role } from '../../types';
 import Sidebar from './Sidebar';
+import { useActiveStore } from '../../hooks/useActiveStore';
 
 const Layout: React.FC = () => {
   const { user } = useAuth();
+  const { loadingStore } = useActiveStore();
   const location = useLocation();
   const navigate = useNavigate();
   const userRole = (user?.role?.toLowerCase() as Role) || Role.CLIENTE;
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  
+  // Liberación forzosa del Backdrop al redimensionar a laptop/desktop
+  React.useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 768 && isMobileMenuOpen) {
+        setIsMobileMenuOpen(false);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isMobileMenuOpen]);
   
   // Ocultar barra lateral en las vistas de catálogo, portal de cliente y repartidor
   const isStandalonePage = location.pathname.includes('/catalogo') || 
@@ -17,23 +31,47 @@ const Layout: React.FC = () => {
                            location.pathname.includes('/repartidor');
   const showSidebar = userRole !== Role.CLIENTE && userRole !== 'repartidor' && !isStandalonePage;
 
-  const isRootPage = ['/', '/dashboard', '/client-portal', '/repartidor', '/catalogo'].includes(location.pathname);
+  const isRootPage = ['/', '/dashboard', '/client-portal', '/repartidor', '/catalogo', '/pos', '/settings', '/despacho', '/closure', '/history', '/clients', '/repartidores', '/morosos', '/inventory', '/purchases', '/providers', '/reports', '/accounting'].includes(location.pathname);
 
+  // El bloqueo de loadingStore fue removido para evitar flicker (el renderizado se delega a las pantallas hijas)
   return (
     <div 
-      className="flex h-screen w-full bg-[#0f172a] text-slate-100 overflow-hidden font-sans"
+      className="flex h-screen w-full bg-slate-900 text-slate-100 overflow-hidden font-sans relative"
     >
-      {showSidebar && <Sidebar userRole={userRole} />}
+      {/* Mobile Sidebar Overlay */}
+      {showSidebar && isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+      
+      {showSidebar && (
+        <Sidebar 
+          userRole={userRole} 
+          isMobileMenuOpen={isMobileMenuOpen} 
+          setIsMobileMenuOpen={setIsMobileMenuOpen} 
+        />
+      )}
       
       <main className="flex-1 flex flex-col min-w-0 relative overflow-hidden">
-        {/* Background Overlay for professional look */}
-        <div className="absolute inset-0 z-0 pointer-events-none opacity-20">
-          <div className="absolute top-0 right-0 w-96 h-96 bg-[#3498db] blur-[150px] rounded-full translate-x-1/2 -translate-y-1/2" />
-          <div className="absolute bottom-0 left-0 w-96 h-96 bg-[#2ecc71] blur-[150px] rounded-full -translate-x-1/2 translate-y-1/2" />
-        </div>
+        {/* Mobile Header with Hamburger Menu */}
+        {showSidebar && (
+          <div className="md:hidden flex items-center p-4 border-b border-white/10 bg-slate-900 sticky top-0 z-30">
+            <button 
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="p-2 bg-white/5 hover:bg-white/10 rounded-xl border border-white/10"
+            >
+              <Menu size={24} className="text-white" />
+            </button>
+            <div className="flex-1 text-center font-black text-white uppercase tracking-widest text-sm">
+              Menu
+            </div>
+          </div>
+        )}
         
         <div className="relative z-10 flex-1 overflow-y-auto custom-scrollbar">
-          <div className="container mx-auto p-4 sm:p-6 lg:p-8 max-w-[1600px]">
+          <div className={`container mx-auto max-w-[1600px] h-full ${location.pathname === '/pos' ? 'p-2 sm:p-4' : 'p-4 sm:p-6 lg:p-8'}`}>
             {!isRootPage && (
               <button 
                 onClick={() => navigate(-1)}

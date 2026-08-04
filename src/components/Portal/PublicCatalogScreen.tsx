@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useActiveStore } from '../../hooks/useActiveStore';
 import { 
   ShoppingBag, 
   Search, 
@@ -7,6 +8,7 @@ import {
   Minus, 
   ShoppingCart, 
   ArrowRight, 
+  ArrowLeft,
   Sparkles, 
   ShieldCheck, 
   Smartphone,
@@ -26,7 +28,8 @@ import {
   updateStock,
   updateDocument,
   createSale,
-  addDocument
+  addDocument,
+  getActiveStoreId
 } from '../../lib/dbUtils';
 import { signInWithPinCustom, db, isMock } from '../../lib/firebase';
 import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
@@ -41,6 +44,7 @@ interface CartItem {
 const PublicCatalogScreen: React.FC = () => {
   const navigate = useNavigate();
   const { user, setUser } = useAuth();
+  const { activeStore } = useActiveStore();
   
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +53,7 @@ const PublicCatalogScreen: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('TODOS');
   const [portalFueraDeServicio, setPortalFueraDeServicio] = useState(false);
   const [estadoPortalVal, setEstadoPortalVal] = useState('automatico');
+  const [storeName, setStoreName] = useState<string>('');
 
   // Dynamic time check
   useEffect(() => {
@@ -181,6 +186,8 @@ const PublicCatalogScreen: React.FC = () => {
   // Cargar productos y tasa BCV
   useEffect(() => {
     const unsub = subscribeToCollection('products', (data) => {
+      // dbUtils.ts ya se encarga de traer los productos de la tienda actual.
+      // Eliminamos el doble filtro para evitar el bug "No se encontraron productos".
       setProducts(data as Product[]);
       setLoading(false);
     });
@@ -534,17 +541,19 @@ Estatus: Pendiente por verificar/entregar
   };
 
   const handleCheckoutClick = () => {
-    setAuthError(null);
-    setAuthView('register');
-    setShowAuthModal(true);
+    navigate('/login');
   };
+
+  const isKaluStore = (activeStore?.name || storeName || '').toLowerCase().includes('kalu');
+  const storeLogoFromDB = (activeStore as any)?.logo || (activeStore as any)?.image_url || (activeStore as any)?.imagen_url || (activeStore as any)?.imagen;
+  const displayLogo = storeLogoFromDB ? storeLogoFromDB : (isKaluStore ? "/tienda.kalu.jpg?v=4" : "/logo.jpg?v=2027");
 
   if (portalFueraDeServicio) {
     return (
       <div 
         className="min-h-screen text-slate-100 font-sans flex flex-col items-center justify-center p-4 text-center"
         style={{
-          backgroundImage: "linear-gradient(rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.98)), url('/logo.png')",
+          backgroundImage: `linear-gradient(rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.98)), url('${displayLogo}')`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
           backgroundAttachment: 'fixed'
@@ -578,18 +587,24 @@ Estatus: Pendiente por verificar/entregar
 
   return (
     <div 
-      className="min-h-screen text-slate-100 font-sans pb-28"
-      style={{
-        backgroundImage: "linear-gradient(rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.95)), url('/logo.png')",
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundAttachment: 'fixed'
-      }}
+      className="min-h-screen text-slate-100 font-sans pb-28 bg-[#050505] relative overflow-x-hidden"
     >
-      {/* Background Glows */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-[#3498db] blur-[150px] rounded-full opacity-10 -translate-y-1/2 translate-x-1/2" />
-        <div className="absolute top-1/3 left-0 w-96 h-96 bg-[#2ecc71] blur-[150px] rounded-full opacity-5 -translate-x-1/2" />
+      {/* Background Image overlay with dark tint */}
+      <div 
+        className="fixed inset-0 opacity-20 pointer-events-none mix-blend-overlay"
+        style={{
+          backgroundImage: `url('${displayLogo}')`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundAttachment: 'fixed',
+          filter: 'grayscale(50%)'
+        }}
+      />
+
+      {/* Background Glows (Estilo Dorado) */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-amber-500 blur-[150px] rounded-full opacity-10 -translate-y-1/2 translate-x-1/2" />
+        <div className="absolute top-1/3 left-0 w-96 h-96 bg-amber-400 blur-[150px] rounded-full opacity-[0.07] -translate-x-1/2" />
       </div>
 
       {/* Modal de Pedido Exitoso */}
@@ -616,130 +631,88 @@ Estatus: Pendiente por verificar/entregar
         </div>
       )}
 
-      <div className="relative z-10 max-w-6xl mx-auto px-4 pt-6">
+      <div className="relative z-10 max-w-6xl mx-auto px-4 pt-4">
         
-        {/* Header / Banner */}
-        <header className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-8 bg-gradient-to-br from-[#075E54] to-[#128C7E] p-6 sm:p-8 rounded-[2.5rem] shadow-2xl relative overflow-hidden text-white">
-          <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
-            <img src="/logo.png" className="w-40 h-40 object-contain rounded-full" alt="" />
-          </div>
+        {/* Botón de Volver */}
+        <button 
+          onClick={() => navigate('/')}
+          className="mb-4 flex items-center gap-1.5 text-amber-500 hover:text-amber-400 font-black uppercase tracking-widest text-xs transition-colors"
+        >
+          <ArrowLeft size={16} /> Volver al Directorio
+        </button>
+
+        {/* Header / Banner (Estilo Dorado - Idéntico en Móvil y PC) */}
+        <header className="flex flex-col items-center justify-between gap-4 mb-6 bg-gradient-to-br from-[#1e1b04] to-black p-5 sm:p-6 rounded-3xl shadow-xl relative overflow-hidden text-white border-2 border-amber-400/80 shadow-amber-500/20">
           
-          <div className="flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left">
-            <img src="/logo.png" className="w-20 h-20 rounded-3xl object-cover border-2 border-white/25 bg-white p-1 shadow-lg shrink-0" alt="Logo Kalu" />
-            <div className="space-y-2">
-              <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">
-                <Sparkles size={12} className="text-yellow-400" /> Catálogo Digital del Vecino
+          <div className="flex flex-col items-center gap-3 w-full text-center">
+            <div className="w-20 h-20 rounded-full flex items-center justify-center bg-white p-0.5 shadow-md mx-auto shrink-0 border border-white/10">
+              <img 
+                src={displayLogo} 
+                alt="Logo Tienda" 
+                className="max-w-full max-h-full rounded-full object-contain"
+              />
+            </div>
+            <div className="space-y-1">
+              <div className="inline-flex items-center justify-center gap-1 bg-amber-500/20 text-amber-300 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest mx-auto">
+                ★ TIENDA OFICIAL
               </div>
-              <h1 className="text-3xl sm:text-4xl font-black tracking-tight leading-none">TIENDA VIRTUAL KALU</h1>
-              <p className="text-sm font-medium text-emerald-100 max-w-md">
-                Explora nuestros productos de calidad. Añade lo que necesites al carrito y realiza tu pedido en segundos sin colas.
+              <h1 className="text-3xl font-black tracking-tight leading-none uppercase text-amber-400 mt-1">
+                {getActiveStoreId() === 'farmacia-mastri' ? 'Farmacia Mastri' : (activeStore?.name || (storeName && storeName !== 'KALU' ? storeName : 'TIENDA VIRTUAL'))}
+              </h1>
+              <p className="text-xs font-medium text-gray-300 max-w-md mx-auto mt-1 line-clamp-2">
+                Catálogo Digital: Añade productos al carrito y pide sin hacer cola.
               </p>
             </div>
           </div>
 
-          <div className="flex flex-col items-center sm:items-end gap-2 bg-black/20 backdrop-blur-md px-6 py-4 rounded-3xl border border-white/10 shrink-0">
-            <div className="text-[10px] font-black uppercase tracking-widest opacity-60">Tasa de Cambio BCV</div>
-            <div className="text-3xl font-black">{tasaBcv.toFixed(2)} <span className="text-xs font-bold text-emerald-300">Bs/USD</span></div>
-            <div className="text-[9px] uppercase tracking-widest font-black bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
-              Homologada
+          <div className="flex flex-row items-center justify-between w-full gap-2 bg-black/40 backdrop-blur-md px-5 py-3 rounded-2xl border border-white/10 mt-2">
+            <div className="text-[9px] font-black uppercase tracking-widest text-amber-500">Tasa de Cambio</div>
+            <div className="text-2xl font-black text-white">{tasaBcv.toFixed(2)} <span className="text-[10px] font-bold text-gray-400">Bs/USD</span></div>
+            <div className="text-[8px] uppercase tracking-widest font-black bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/20">
+              BCV Oficial
             </div>
           </div>
         </header>
 
-        {/* Barra de Estatus de Sesión */}
-        {user && user.role === 'cliente' ? (
-          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-[2rem] p-4 sm:p-6 mb-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-white relative overflow-hidden backdrop-blur-md">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-emerald-400 font-black text-lg">
-                {user.username.charAt(0).toUpperCase()}
-              </div>
-              <div className="text-center sm:text-left">
-                <p className="text-[9px] text-emerald-400 font-black uppercase tracking-wider leading-none">SESIÓN ACTIVA</p>
-                <h4 className="text-base font-black text-white mt-1">¡Bienvenido de nuevo, {user.username}!</h4>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => navigate('/client-portal')}
-                className="bg-[#2ecc71] hover:bg-[#27ae60] text-white font-bold text-xs uppercase tracking-widest px-6 py-3 rounded-xl transition-all active:scale-95 shadow-lg"
-              >
-                Ir a mi Portal de Compras
-              </button>
-              <button 
-                onClick={async () => {
-                  setUser(null);
-                  localStorage.removeItem('kalu_current_user');
-                  localStorage.removeItem('kalu_pin_verified');
-                  localStorage.removeItem('kalu_remembered_user');
-                  localStorage.removeItem('kalu_bio_last_user_email');
-                  try {
-                    const { auth } = await import('../../lib/firebase');
-                    await auth.signOut();
-                  } catch (e) {}
-                  window.location.href = '/';
-                }}
-                className="bg-white/5 hover:bg-red-500/20 hover:text-red-400 border border-white/10 text-gray-300 font-bold text-xs uppercase tracking-widest px-4 py-3 rounded-xl transition-all"
-              >
-                Cerrar Sesión
-              </button>
-            </div>
-          </div>
-        ) : user ? (
-          <div className="bg-blue-500/10 border border-blue-500/20 rounded-[2rem] p-4 sm:p-6 mb-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-white relative overflow-hidden backdrop-blur-md">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-blue-500/20 flex items-center justify-center text-blue-400 font-black text-lg">
-                A
-              </div>
-              <div className="text-center sm:text-left">
-                <p className="text-[9px] text-blue-400 font-black uppercase tracking-wider leading-none">ACCESO ADMINISTRATIVO</p>
-                <h4 className="text-base font-black text-white mt-1">{user.username} ({user.role.toUpperCase()})</h4>
-              </div>
-            </div>
-            <button 
-              onClick={() => navigate('/')}
-              className="bg-[#3498db] hover:bg-[#2980b9] text-white font-bold text-xs uppercase tracking-widest px-6 py-3 rounded-xl transition-all active:scale-95"
-            >
-              Volver al Panel Admin
-            </button>
-          </div>
-        ) : (
-          <div className="bg-white/5 border border-white/10 rounded-[2rem] p-4 sm:p-6 mb-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-white backdrop-blur-md">
-            <div className="text-center sm:text-left space-y-1">
+        {/* Barra de Estatus de Sesión (Solo para Invitados) */}
+        {!user && (
+          <div className="bg-white/5 border border-white/10 rounded-[2rem] p-5 sm:p-6 mb-8 flex flex-col items-center gap-4 text-white backdrop-blur-md text-center">
+            <div className="space-y-1">
               <p className="text-sm font-bold text-gray-300">¿Ya estás registrado en nuestro sistema?</p>
               <p className="text-[10px] text-gray-500 uppercase font-black tracking-wide">Inicia sesión rápido con tu PIN para comprar fiado y ver tus saldos.</p>
             </div>
             <button 
-              onClick={() => { setAuthView('login'); setAuthError(null); setShowAuthModal(true); }}
-              className="bg-[#3498db] hover:bg-[#2980b9] text-white font-bold text-xs uppercase tracking-widest px-6 py-3 rounded-xl transition-all active:scale-95 flex items-center gap-2"
+              onClick={() => navigate('/login')}
+              className="bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-widest px-8 py-3.5 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 w-full sm:w-auto"
             >
-              <LogIn size={14} /> INICIAR SESIÓN CON PIN
+              <LogIn size={14} className="text-black" /> INICIAR SESIÓN
             </button>
           </div>
         )}
 
         {/* Search & Filters */}
-        <section className="bg-white/5 border border-white/10 backdrop-blur-md p-6 rounded-[2rem] mb-8 space-y-4 shadow-xl">
+        <section className="bg-[#1e1b04]/40 border border-amber-500/10 backdrop-blur-md p-4 sm:p-5 rounded-[2rem] mb-6 space-y-3 shadow-xl">
           <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={20} />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-amber-500/50" size={18} />
             <input 
               type="text"
               placeholder="Buscar productos por nombre o código..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-white placeholder-gray-500 outline-none focus:border-[#3498db] transition-colors font-semibold"
+              className="w-full bg-black/60 border border-amber-500/20 rounded-2xl py-3 pl-11 pr-4 text-white placeholder-gray-500 outline-none focus:border-amber-400 transition-colors font-semibold text-sm"
             />
           </div>
 
-          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
             {categories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
                 className={cn(
-                  "px-5 py-2.5 rounded-full text-xs font-black uppercase tracking-widest whitespace-nowrap transition-all active:scale-95",
+                  "px-4 py-2 rounded-full text-[10px] sm:text-xs font-black uppercase tracking-widest whitespace-nowrap transition-all active:scale-95 border",
                   selectedCategory === cat 
-                    ? "bg-[#3498db] text-white shadow-lg shadow-[#3498db]/20" 
-                    : "bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 border border-white/5"
+                    ? "bg-amber-500 text-black border-amber-500 shadow-lg shadow-amber-500/20" 
+                    : "bg-white/5 text-gray-400 hover:text-amber-400 hover:bg-white/10 border-white/5 hover:border-amber-500/30"
                 )}
               >
                 {cat === 'TODOS' ? '🏠 TODOS' : cat}
@@ -750,16 +723,20 @@ Estatus: Pendiente por verificar/entregar
 
         {/* Product Grid */}
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-6">
-            <img src="/logo.png" className="w-20 h-20 object-contain rounded-2xl animate-pulse bg-white p-1 shadow-lg shadow-black/50" alt="Kalu Logo" />
+          <div className="flex flex-col items-center justify-center py-16 gap-5">
+            <img 
+              src={displayLogo} 
+              alt="Logo Tienda" 
+              className="w-12 h-12 rounded-full object-cover flex-shrink-0 shadow-sm border border-white/10"
+            />
             <div className="flex flex-col items-center gap-2">
-              <div className="w-10 h-10 border-4 border-[#3498db] border-t-transparent rounded-full animate-spin" />
-              <p className="text-gray-400 font-black uppercase tracking-widest text-[10px]">Cargando productos...</p>
+              <div className="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin" />
+              <p className="text-amber-500/70 font-black uppercase tracking-widest text-[10px]">Cargando productos...</p>
             </div>
           </div>
         ) : filteredProducts.length === 0 ? (
-          <div className="text-center py-20 bg-white/5 border border-white/10 rounded-[2rem] border-dashed">
-            <ShoppingBag className="mx-auto text-gray-600 mb-4" size={48} />
+          <div className="text-center py-16 bg-[#1e1b04]/40 border border-amber-500/10 rounded-[2rem] border-dashed">
+            <ShoppingBag className="mx-auto text-amber-500/30 mb-4" size={48} />
             <h3 className="text-lg font-bold text-gray-300">No se encontraron productos</h3>
             <p className="text-gray-500 text-sm mt-1">Prueba con otra categoría o término de búsqueda.</p>
           </div>
@@ -776,11 +753,11 @@ Estatus: Pendiente por verificar/entregar
                   onClick={handleCheckoutClick}
                   className={cn(
                     "rounded-3xl p-3 flex flex-col justify-between transition-all duration-300 group shadow-lg border text-left",
-                    "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 hover:-translate-y-1"
+                    "bg-[#1e1b04]/40 border-amber-500/10 hover:bg-black/60 hover:border-amber-500/40 hover:-translate-y-1 hover:shadow-amber-500/10"
                   )}
                 >
                   <div className="flex flex-col gap-2 flex-1 w-full">
-                    <div className="w-full aspect-square rounded-2xl overflow-hidden bg-black/30 relative shrink-0">
+                    <div className="w-full aspect-square rounded-2xl overflow-hidden bg-black/50 relative shrink-0 border border-white/5">
                       {product.imagen_url ? (
                         <img 
                           src={product.imagen_url} 
@@ -789,19 +766,19 @@ Estatus: Pendiente por verificar/entregar
                           loading="lazy"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-gray-600">
+                        <div className="w-full h-full flex items-center justify-center text-amber-500/20">
                           <ShoppingBag size={32} />
                         </div>
                       )}
                       
                       {product.stock <= 0 ? (
-                        <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center">
-                          <span className="bg-red-500 text-white font-black text-[10px] uppercase tracking-widest px-2 py-1 rounded-lg">
+                        <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center">
+                          <span className="bg-red-500/90 text-white font-black text-[10px] uppercase tracking-widest px-2 py-1 rounded-lg">
                             Agotado
                           </span>
                         </div>
                       ) : product.stock <= 5 ? (
-                        <span className="absolute bottom-2 left-2 bg-red-500/90 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full">
+                        <span className="absolute bottom-2 left-2 bg-amber-500/90 text-black text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full">
                           Quedan {product.stock}
                         </span>
                       ) : null}
@@ -809,23 +786,23 @@ Estatus: Pendiente por verificar/entregar
 
                     <div className="space-y-1 mt-1 flex-1 flex flex-col w-full">
                       <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                        <span className="bg-black/40 text-[8px] font-black uppercase px-1.5 py-0.5 rounded border border-white/5 truncate max-w-[80%]">
+                        <span className="bg-black/60 text-[8px] font-black text-amber-200/50 uppercase px-1.5 py-0.5 rounded border border-amber-500/10 truncate max-w-[80%]">
                           {product.categoria}
                         </span>
                         {hasOffer && (
-                          <span className="bg-yellow-500 text-black text-[8px] font-black uppercase px-1.5 py-0.5 rounded shadow-lg">
+                          <span className="bg-amber-500 text-black text-[8px] font-black uppercase px-1.5 py-0.5 rounded shadow-lg">
                             Oferta
                           </span>
                         )}
                       </div>
-                      <h3 className="text-xs font-black text-white leading-tight uppercase line-clamp-2">{product.nombre}</h3>
+                      <h3 className="text-xs font-black text-white leading-tight uppercase line-clamp-2 group-hover:text-amber-400 transition-colors">{product.nombre}</h3>
                     </div>
                   </div>
 
-                  <div className="mt-2 pt-2 border-t border-white/5 flex flex-col gap-2 w-full">
+                  <div className="mt-2 pt-2 border-t border-amber-500/10 flex flex-col gap-2 w-full">
                     <div className="flex flex-col">
                       <div className="flex items-baseline gap-1.5">
-                        <span className="text-sm font-black text-emerald-400">
+                        <span className="text-sm font-black text-amber-400">
                           {formatCurrency(price)}
                         </span>
                         {hasOffer && (
@@ -834,13 +811,13 @@ Estatus: Pendiente por verificar/entregar
                           </span>
                         )}
                       </div>
-                      <div className="text-[9px] text-gray-500 font-bold">
+                      <div className="text-[9px] text-amber-500/60 font-bold">
                         {formatCurrency(price , 'Bs', tasaBcv).replace('VES', 'Bs.')}
                       </div>
                     </div>
 
                     {product.stock > 0 && (
-                      <div className="bg-[#3498db]/20 text-[#3498db] border border-[#3498db]/30 group-hover:text-white px-2 py-2 rounded-xl shadow-lg flex items-center justify-center font-black uppercase text-[10px] tracking-widest group-hover:bg-[#2980b9] transition-colors w-full">
+                      <div className="bg-amber-500/10 text-amber-500 border border-amber-500/30 group-hover:text-black px-2 py-1.5 rounded-xl shadow-lg flex items-center justify-center font-black uppercase text-[10px] tracking-widest group-hover:bg-amber-500 transition-colors w-full">
                         Comprar
                       </div>
                     )}
@@ -868,7 +845,11 @@ Estatus: Pendiente por verificar/entregar
             {!showDownloadPrompt && (
               <div className="text-center mb-6">
                 <div className="inline-flex p-1.5 rounded-2xl bg-white border border-white/10 mb-3 shadow-md">
-                  <img src="/logo.png" className="w-12 h-12 rounded-xl object-cover" alt="Logo Kalu" />
+                  <img 
+                    src={displayLogo} 
+                    alt="Logo Tienda" 
+                    className="w-10 h-10 rounded-full object-cover flex-shrink-0 shadow-sm"
+                  />
                 </div>
                 <h3 className="text-xl font-black uppercase tracking-tight text-white">
                   {authView === 'register' ? 'Registro de Vecino' : 'Ingresa tu PIN'}

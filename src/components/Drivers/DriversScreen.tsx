@@ -14,11 +14,13 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { subscribeToCollection, updateDocument } from '../../lib/dbUtils';
+import { subscribeToCollection, updateDocument, getActiveStoreId } from '../../lib/dbUtils';
 import { motion, AnimatePresence } from 'motion/react';
 import { useToast } from '../../contexts/ToastProvider';
+import { useNavigate } from 'react-router-dom';
 
 const DriversScreen: React.FC = () => {
+  const navigate = useNavigate();
   const { addToast } = useToast();
   const [drivers, setDrivers] = useState<any[]>([]);
   const [allUsers, setAllUsers] = useState<any[]>([]);
@@ -30,7 +32,7 @@ const DriversScreen: React.FC = () => {
   useEffect(() => {
     const unsub = subscribeToCollection('users', (data) => {
       setAllUsers(data);
-      const filtered = data.filter((u: any) => u.role === 'repartidor');
+      const filtered = data.filter((u: any) => u.role === 'repartidor' && u.storeId === getActiveStoreId());
       setDrivers(filtered);
       setLoading(false);
     });
@@ -92,38 +94,59 @@ const DriversScreen: React.FC = () => {
   );
 
   return (
-    <div className="h-full flex flex-col p-6 max-w-7xl mx-auto w-full">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight flex items-center gap-3 text-white">
-            <Truck className="text-[#3498db]" size={32} />
-            Gestión de Repartidores
-          </h1>
-          <p className="text-gray-400 mt-1 flex items-center gap-2">
-            Administra los datos de contacto para notificaciones automáticas (n8n).
-          </p>
+    // Contenedor principal pegado arriba
+    <div className="min-h-screen text-white p-4 md:p-6 pt-1 md:pt-1 transition-all duration-300 w-full flex flex-col">
+      
+      {/* 1. CABECERA ALINEADA Y PEGADA ARRIBA */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-3">
+        <div className="flex items-center gap-3">
+          
+          {/* BOTÓN VOLVER (Al lado del camioncito) */}
+          <button 
+            onClick={() => navigate(-1)}
+            title="Volver atrás"
+            className="w-9 h-9 flex items-center justify-center bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-400 rounded-full transition-all border border-cyan-500/30 shrink-0"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+
+          {/* TÍTULO CON CAMIONCITO */}
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="bg-cyan-500/20 text-cyan-400 p-1 rounded-lg text-lg">🚚</span>
+              <h1 className="text-2xl md:text-3xl font-black tracking-wide uppercase leading-none">
+                GESTIÓN DE REPARTIDORES
+              </h1>
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Administra los datos de contacto para notificaciones automáticas (n8n)
+            </p>
+          </div>
         </div>
 
         <button 
           onClick={() => setShowAddModal(true)}
-          className="bg-[#3498db] hover:bg-[#2980b9] text-white px-5 py-3 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-[#3498db]/20 active:scale-95 whitespace-nowrap"
+          className="bg-[#3498db] hover:bg-[#2980b9] text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-[#3498db]/20 active:scale-95 whitespace-nowrap self-start md:self-auto text-sm"
         >
-          <UserPlus size={20} />
+          <UserPlus size={18} />
           Agregar Repartidor
         </button>
       </div>
 
-      <div className="bg-[#1a1f2e] border border-gray-800 rounded-2xl p-4 mb-6 shadow-xl">
-        <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={20} />
-          <input 
-            type="text" 
-            placeholder="Buscar por nombre, email o teléfono..." 
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-[#242b3d] text-white pl-12 pr-4 py-4 rounded-xl border border-gray-700 focus:border-[#3498db] focus:ring-1 focus:ring-[#3498db] outline-none transition-all"
-          />
-        </div>
+      {/* BLOQUE DE BÚSQUEDA COMPACTO */}
+      <div className="bg-[#112d59]/80 backdrop-blur-md p-3 rounded-2xl border border-slate-700/50 shadow-md mb-4 flex items-center gap-2">
+        <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input 
+          type="text" 
+          placeholder="Buscar por nombre, email o teléfono..." 
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="bg-transparent w-full focus:outline-none text-sm text-white placeholder-slate-400"
+        />
       </div>
 
       <div className="flex-1 overflow-auto custom-scrollbar">
@@ -132,73 +155,85 @@ const DriversScreen: React.FC = () => {
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#3498db]"></div>
           </div>
         ) : filteredDrivers.length === 0 ? (
-          <div className="bg-[#1a1f2e] border border-gray-800 rounded-2xl p-12 text-center flex flex-col items-center shadow-xl">
-            <div className="bg-[#242b3d] p-4 rounded-full mb-4">
-              <Truck size={48} className="text-gray-500" />
+          <div className="bg-[#112d59]/80 border border-slate-700/50 rounded-2xl p-12 text-center flex flex-col items-center shadow-md">
+            <div className="bg-slate-900/50 p-4 rounded-full mb-4">
+              <Truck size={48} className="text-slate-500" />
             </div>
             <h3 className="text-xl font-bold text-white mb-2">No hay repartidores registrados</h3>
-            <p className="text-gray-400 max-w-md">
+            <p className="text-slate-400 max-w-md">
               Aún no has agregado a ningún repartidor o la búsqueda no coincide con ninguno.
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredDrivers.map(driver => (
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                key={driver.id} 
-                className="bg-[#1a1f2e] border border-gray-800 rounded-2xl overflow-hidden shadow-xl hover:border-gray-700 transition-colors group flex flex-col"
-              >
-                <div className="p-6 flex-1">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="w-12 h-12 bg-gradient-to-br from-[#3498db] to-[#2ecc71] rounded-full flex items-center justify-center text-white font-bold text-xl shadow-lg">
-                      {driver.username?.charAt(0).toUpperCase() || 'R'}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* 2. GRID DE TARJETAS DE REPARTIDORES (4 POR FILA / PICADAS A LA MITAD) */}
+            {filteredDrivers.map((driver) => {
+              const isActive = driver.status !== 'inactive'; // Verifica estado
+
+              return (
+                <div 
+                  key={driver.id}
+                  className="bg-[#112d59]/80 p-3 rounded-2xl border border-slate-700/50 hover:border-cyan-500/40 transition-all duration-300 shadow-md flex flex-col justify-between"
+                >
+                  {/* CABECERA DE LA TARJETA: AVATAR + NOMBRE + BADGE ESTADO */}
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2.5 truncate">
+                      {/* Foto/Avatar Redondeado Pequeño */}
+                      <div className="w-9 h-9 rounded-full bg-cyan-500/20 text-cyan-400 font-black flex items-center justify-center shrink-0 border border-cyan-500/30 text-sm uppercase">
+                        {driver.username?.charAt(0) || 'R'}
+                      </div>
+
+                      <div className="truncate">
+                        <h3 className="font-extrabold text-sm text-white truncate leading-tight">
+                          {driver.username}
+                        </h3>
+                        <p className="text-[10px] text-slate-400 truncate">
+                          🪪 {driver.cedula || 'No registrada'}
+                        </p>
+                      </div>
                     </div>
-                    <span className="bg-[#3498db]/20 text-[#3498db] px-3 py-1 rounded-full text-xs font-bold border border-[#3498db]/30 flex items-center gap-1">
-                      <CheckCircle size={12} /> Activo
+
+                    {/* BADGE DE ESTADO: VERDE / ROJO */}
+                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase border shrink-0 ${
+                      isActive 
+                        ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' 
+                        : 'bg-red-500/20 text-red-400 border-red-500/30'
+                    }`}>
+                      {isActive ? 'ACTIVO' : 'INACTIVO'}
                     </span>
                   </div>
-                  
-                  <h3 className="text-xl font-bold text-white mb-1 group-hover:text-[#3498db] transition-colors">{driver.username}</h3>
-                  <div className="flex items-center gap-2 text-gray-400 text-sm mb-4">
-                    <IdCard size={14} /> C.I: {driver.cedula || 'No registrada'}
+
+                  {/* CONTACTO COMPACTO */}
+                  <div className="bg-slate-900/40 p-2 rounded-xl border border-slate-800 mb-2 space-y-1">
+                    <p className={cn("text-[11px] flex items-center gap-1.5 truncate", driver.telefono ? "text-slate-300" : "text-red-400 font-bold")}>
+                      <span>📞</span> {driver.telefono || 'Faltante (n8n fallará)'}
+                    </p>
+                    {driver.email && (
+                      <p className="text-[10px] text-slate-400 flex items-center gap-1.5 truncate">
+                        <span>✉️</span> {driver.email}
+                      </p>
+                    )}
                   </div>
-                  
-                  <div className="space-y-3 bg-[#242b3d] p-4 rounded-xl border border-gray-800">
-                    <div className="flex items-center gap-3 text-sm">
-                      <div className="bg-[#3498db]/10 p-2 rounded-lg">
-                        <Phone size={16} className="text-[#3498db]" />
-                      </div>
-                      <span className={cn("font-medium", driver.telefono ? "text-gray-200" : "text-red-400 flex items-center gap-1")}>
-                        {driver.telefono || <><AlertTriangle size={14} /> Faltante (n8n fallará)</>}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 text-sm">
-                      <div className="bg-purple-500/10 p-2 rounded-lg">
-                        <Mail size={16} className="text-purple-400" />
-                      </div>
-                      <span className="text-gray-400 truncate font-medium">{driver.email}</span>
-                    </div>
+
+                  {/* BOTONES DE ACCIÓN PEQUEÑOS */}
+                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-700/30">
+                    <button 
+                      onClick={() => setEditingDriver(driver)}
+                      className="py-1 px-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-semibold rounded-lg border border-slate-700 transition-all flex items-center justify-center gap-1"
+                    >
+                      ✏️ Editar
+                    </button>
+                    <button 
+                      onClick={() => handleDemoteToClient(driver.id)}
+                      className="py-1 px-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-semibold rounded-lg border border-red-500/30 transition-all flex items-center justify-center gap-1"
+                    >
+                      ❌ Quitar
+                    </button>
                   </div>
+
                 </div>
-                
-                <div className="grid grid-cols-2 border-t border-gray-800 bg-[#151923]">
-                  <button 
-                    onClick={() => setEditingDriver(driver)}
-                    className="p-4 text-gray-400 hover:text-white hover:bg-gray-800/50 flex items-center justify-center gap-2 font-medium transition-colors border-r border-gray-800"
-                  >
-                    <Edit2 size={16} /> Editar
-                  </button>
-                  <button 
-                    onClick={() => handleDemoteToClient(driver.id)}
-                    className="p-4 text-red-400 hover:text-red-300 hover:bg-red-500/10 flex items-center justify-center gap-2 font-medium transition-colors"
-                  >
-                    <X size={16} /> Quitar
-                  </button>
-                </div>
-              </motion.div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

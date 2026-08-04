@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  ShoppingBag, 
   Search, 
   Camera, 
   Plus, 
@@ -20,14 +19,18 @@ import { useAuth } from '../../contexts/AuthProvider';
 import { useToast } from '../../contexts/ToastProvider';
 import { cn, formatCurrency, compressImage } from '../../lib/utils';
 import { scanInvoiceIA, interactWithInvoiceIA } from '../../services/geminiService';
+import ManualPurchaseModal from './ManualPurchaseModal';
+import { useNavigate } from 'react-router-dom';
 
 const PurchasesScreen: React.FC = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { addToast } = useToast();
   const [providers, setProviders] = useState<any[]>([]);
   const [selectedProvider, setSelectedProvider] = useState('');
   const [isCredit, setIsCredit] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [isManualModalOpen, setIsManualModalOpen] = useState(false);
 
   useEffect(() => {
     return subscribeToCollection('providers', (data) => setProviders(data));
@@ -134,7 +137,9 @@ const PurchasesScreen: React.FC = () => {
       const tasa = await getLatestTasa();
 
       // 2. Obtener nombres de productos para el contexto de la IA
-      const prodsSnap = await getDocs(collection(db, 'products'));
+      const { getActiveStoreId } = await import('../../lib/dbUtils');
+      const qProds = query(collection(db, 'products'), where('storeId', '==', getActiveStoreId()));
+      const prodsSnap = await getDocs(qProds);
       const productNames = prodsSnap.docs.map(d => d.data().nombre).join(', ');
 
       const compressedBase64 = await compressImage(file, 800);
@@ -171,26 +176,6 @@ const PurchasesScreen: React.FC = () => {
     setItems(items.filter((_, i) => i !== idx));
   };
 
-  const handleAddManual = () => {
-    const nombre = prompt("Nombre del producto:");
-    if (!nombre) return;
-    const cant = prompt("Cantidad comprada:");
-    const costo = prompt("Costo unitario (USD):");
-    const margen = prompt("Margen Ganancia (%):") || "0";
-    
-    const costNum = Number(costo) || 0;
-    const marginNum = Number(margen) || 0;
-    const pv = costNum + (costNum * marginNum / 100);
-
-    setItems([...items, { 
-      nombre: nombre.toUpperCase(), 
-      cantidad: Number(cant) || 1, 
-      costo: costNum,
-      margen: marginNum,
-      precio_venta: pv
-    }]);
-  };
-
   const handleSavePurchase = async () => {
     if (items.length === 0) return addToast('error', 'Agrega al menos un producto');
     if (!selectedProvider) return addToast('error', 'Selecciona un proveedor');
@@ -201,11 +186,13 @@ const PurchasesScreen: React.FC = () => {
       
       // 1. Process each item (Update stock or create product)
       for (const item of batchItems) {
-        const q = query(collection(db, 'products'), where('nombre', '==', item.nombre));
+        const { getActiveStoreId, addDocument } = await import('../../lib/dbUtils');
+        const storeId = getActiveStoreId();
+        const q = query(collection(db, 'products'), where('storeId', '==', storeId), where('nombre', '==', item.nombre));
         const snap = await getDocs(q);
         if (snap.empty) {
           // Create product
-          await addDoc(collection(db, 'products'), {
+          await addDocument('products', {
             codigo: 'PROD-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
             nombre: item.nombre,
             categoria: 'Mercancía General',
@@ -215,7 +202,7 @@ const PurchasesScreen: React.FC = () => {
             stock: item.cantidad,
             stock_minimo: 5,
             unidad_medida: 'UNIDAD',
-            createdAt: serverTimestamp()
+            storeId: storeId
           });
         } else {
           // Update product
@@ -242,7 +229,8 @@ const PurchasesScreen: React.FC = () => {
         fecha: new Date().toISOString(),
         usuario_id: user?.uid || 'unknown'
       };
-      await addDoc(collection(db, 'compras_mercancia'), compraData);
+      const { addDocument } = await import('../../lib/dbUtils');
+      await addDocument('compras_mercancia', compraData);
 
       // 3. Update Provider Debt if Credit
       if (isCredit) {
@@ -252,7 +240,7 @@ const PurchasesScreen: React.FC = () => {
       }
 
       // 4. Audit Log
-      await addDoc(collection(db, 'inventory_audit'), {
+      await addDocument('inventory_audit', {
         producto_id: 'MULTIPLE',
         producto_nombre: 'Compra de Mercancía',
         tipo: 'ENTRADA',
@@ -279,14 +267,40 @@ const PurchasesScreen: React.FC = () => {
 
   const total = items.reduce((acc, curr) => acc + (curr.cantidad * curr.costo), 0);
 
+  if (isManualModalOpen) {
+    return (
+      <div className="min-h-screen text-white p-4 md:p-6 pt-1 md:pt-1 transition-all duration-300">
+        <ManualPurchaseModal 
+          isOpen={isManualModalOpen}
+          onClose={() => setIsManualModalOpen(false)}
+          providers={providers}
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
-          <h1 className="text-3xl font-black text-white flex items-center gap-3">
-            <ShoppingBag className="text-[#3498db]" /> CARGA DE MERCANCÍA
-          </h1>
-          <p className="text-gray-400 text-sm">Incremento de stock y actualización de costos</p>
+    <div className="min-h-screen text-white p-4 md:p-6 pt-1 md:pt-1 transition-all duration-300">
+      <div className="space-y-8 animate-in fade-in duration-700">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-3">
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => navigate(-1)}
+            title="Volver atrás"
+            className="w-9 h-9 flex items-center justify-center bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-400 rounded-full transition-all border border-cyan-500/30 shrink-0"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <div>
+            <h1 className="text-2xl md:text-3xl font-black tracking-wide uppercase leading-none">
+              CARGA DE MERCANCÍA
+            </h1>
+            <p className="text-xs text-slate-400 mt-1">
+              Incremento de stock y actualización de costos
+            </p>
+          </div>
         </div>
         <div className="flex gap-3">
           <input 
@@ -451,9 +465,12 @@ const PurchasesScreen: React.FC = () => {
                  )}
                </tbody>
              </table>
-          </div>
+           </div>
           
-          <button onClick={handleAddManual} className="w-full h-16 border-2 border-dashed border-white/10 rounded-[2.5rem] flex items-center justify-center gap-2 text-gray-500 font-black uppercase tracking-widest hover:border-[#3498db] hover:text-[#3498db] transition-all">
+          <button 
+            onClick={() => setIsManualModalOpen(true)} 
+            className="w-full h-16 mt-4 border-2 border-dashed border-white/10 rounded-[2.5rem] flex items-center justify-center gap-2 text-gray-500 font-black uppercase tracking-widest hover:border-[#3498db] hover:text-[#3498db] transition-all"
+          >
             <Plus size={20} /> AÑADIR PRODUCTO MANUALMENTE
           </button>
         </div>
@@ -508,6 +525,7 @@ const PurchasesScreen: React.FC = () => {
               Asegúrate de que los costos cargados hoy no excedan el 5% de la carga anterior para mantener tus margenes de utilidad estables.
             </p>
           </div>
+        </div>
         </div>
       </div>
     </div>

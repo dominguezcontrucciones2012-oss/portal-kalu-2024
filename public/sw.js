@@ -17,21 +17,22 @@
 // Actualizaciones limpian el caché viejo y recargan la app automáticamente.
 // ============================================================
 
-const CACHE_VERSION = 'v12';
+const CACHE_VERSION = 'v13';
 const CACHE_STATIC = `kalu-static-${CACHE_VERSION}`;
 const CACHE_PAGES  = `kalu-pages-${CACHE_VERSION}`;
 
-// ── INSTALL: pre-cachear el shell básico ──────────────────────
 self.addEventListener('install', (e) => {
+  self.skipWaiting(); // ← Activar inmediatamente sin esperar
   e.waitUntil(
     caches.open(CACHE_PAGES).then(cache =>
       cache.addAll(['/index.html', '/manifest.json', '/logo.png'])
-    ).then(() => self.skipWaiting()) // ← Activar inmediatamente sin esperar
+    )
   );
 });
 
 // ── ACTIVATE: borrar TODOS los cachés viejos y tomar control ─
 self.addEventListener('activate', (e) => {
+  self.clients.claim(); // ← Tomar control de todas las pestañas abiertas
   const validCaches = [CACHE_STATIC, CACHE_PAGES];
   e.waitUntil(
     caches.keys()
@@ -41,7 +42,6 @@ self.addEventListener('activate', (e) => {
           return caches.delete(k);
         })
       ))
-      .then(() => self.clients.claim()) // ← Tomar control de todas las pestañas abiertas
       .then(() => {
         // Notificar a todas las pestañas que hubo una actualización
         return self.clients.matchAll({ type: 'window' }).then(clients => {

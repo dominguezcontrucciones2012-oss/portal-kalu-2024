@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { X, Save, Box, Image as ImageIcon, Upload, Loader2, Microphone, Mic, Zap } from 'lucide-react';
+import { X, Save, Box, Image as ImageIcon, Upload, Loader2, Mic, Zap } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { addDocument, updateDocument } from '../../lib/dbUtils';
+import { addDocument, updateDocument, getActiveStoreId } from '../../lib/dbUtils';
 import { storage } from '../../lib/firebase';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { type Product, type PiezaProducto } from '../../types';
@@ -137,6 +137,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, onSuccess,
       }
 
       const rawProduct = {
+        storeId: initialData?.storeId || getActiveStoreId(),
         codigo: formData.codigo,
         nombre: formData.nombre,
         categoria: formData.categoria || 'GENERAL',

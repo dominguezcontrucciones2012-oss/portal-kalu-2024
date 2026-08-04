@@ -16,8 +16,10 @@ import { subscribeToCollection } from '../../lib/dbUtils';
 import { type Provider } from '../../types';
 import ProviderModal from './ProviderModal';
 import { AnimatePresence } from 'motion/react';
+import { useNavigate } from 'react-router-dom';
 
 const ProvidersScreen: React.FC = () => {
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [providers, setProviders] = useState<Provider[]>([]);
   const [showModal, setShowModal] = useState(false);
@@ -34,13 +36,24 @@ const ProvidersScreen: React.FC = () => {
   );
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
+    <div className="min-h-screen text-white p-4 md:p-6 pt-1 md:pt-1 transition-all duration-300 space-y-8 animate-in fade-in duration-700">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
-          <h1 className="text-3xl font-black text-white flex items-center gap-3">
-            <Truck className="text-[#3498db]" /> DIRECTORIO DE PROVEEDORES
-          </h1>
-          <p className="text-gray-400 text-sm">Gestiona tus aliados y contactos de suministro</p>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => navigate(-1)}
+            title="Volver atrás"
+            className="w-9 h-9 flex items-center justify-center bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-400 rounded-full transition-all border border-cyan-500/30 shrink-0"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <div>
+            <h1 className="text-2xl md:text-3xl font-black text-white flex items-center gap-3 uppercase">
+              <Truck className="text-[#3498db]" /> DIRECTORIO DE PROVEEDORES
+            </h1>
+            <p className="text-gray-400 text-xs md:text-sm mt-1">Gestiona tus aliados y contactos de suministro</p>
+          </div>
         </div>
         <button onClick={() => setShowModal(true)} className="bg-[#3498db] hover:bg-[#2980b9] text-white font-black py-3 px-8 rounded-2xl shadow-xl shadow-blue-500/10 transition-all flex items-center gap-2 text-sm uppercase tracking-widest active:scale-95">
           <Plus size={18} /> NUEVO PROVEEDOR

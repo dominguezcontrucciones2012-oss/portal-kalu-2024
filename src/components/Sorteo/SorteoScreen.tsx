@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, onSnapshot, doc, deleteDoc, getDocs } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, doc, deleteDoc, getDocs, where } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthProvider';
 import { Trophy, Trash2, Ticket, Sparkles, RefreshCw } from 'lucide-react';
@@ -26,23 +26,29 @@ const SorteoScreen = () => {
   const [showConfirmClear, setShowConfirmClear] = useState(false);
 
   useEffect(() => {
-    const q = query(collection(db, 'sorteos_activos'), orderBy('fecha', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as TicketData[];
-      setTickets(docs);
-      setLoading(false);
+    let unsubscribe: any;
+    import('../../lib/dbUtils').then(({ getActiveStoreId }) => {
+      const q = query(collection(db, 'sorteos_activos'), where('storeId', '==', getActiveStoreId()), orderBy('fecha', 'desc'));
+      unsubscribe = onSnapshot(q, (snapshot) => {
+        const docs = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as TicketData[];
+        setTickets(docs);
+        setLoading(false);
+      });
     });
 
-    return () => unsubscribe();
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
   }, []);
 
   const clearSorteo = async () => {
     if (!isAdmin) return;
     try {
-      const snap = await getDocs(collection(db, 'sorteos_activos'));
+      const { getActiveStoreId } = await import('../../lib/dbUtils');
+      const snap = await getDocs(query(collection(db, 'sorteos_activos'), where('storeId', '==', getActiveStoreId())));
       const batchPromises = snap.docs.map(d => deleteDoc(doc(db, 'sorteos_activos', d.id)));
       await Promise.all(batchPromises);
       addToast('success', 'Sorteo semanal reiniciado correctamente.');

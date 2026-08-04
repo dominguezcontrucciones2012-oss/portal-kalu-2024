@@ -10,6 +10,7 @@ import {
   CheckCircle,
   UserPlus,
   ArrowRight,
+  ArrowLeft,
   Info,
   AlertCircle,
   ShieldCheck,
@@ -25,7 +26,8 @@ import { useNavigate } from 'react-router-dom';
 import { cn, formatCurrency } from '../../lib/utils';
 import { 
   subscribeToCollection, 
-  createSale, 
+  createSale,
+  createClient,
   updateStock, 
   getLatestTasa, 
   pauseSale, 
@@ -35,6 +37,7 @@ import {
   deleteDocument
 } from '../../lib/dbUtils';
 import { useAuth } from '../../contexts/AuthProvider';
+import { useActiveStore } from '../../hooks/useActiveStore';
 import { type Product, type Client, Role, type VentaPausada, type Sale, type PiezaProducto } from '../../types';
 import { useToast } from '../../contexts/ToastProvider';
 import SupervisorCodeModal from '../common/SupervisorCodeModal';
@@ -48,6 +51,7 @@ interface CartItem extends Product {
 }
 
 const POSScreen: React.FC = () => {
+  const { activeStore } = useActiveStore();
   const { user } = useAuth();
   const { addToast } = useToast();
   const navigate = useNavigate();
@@ -72,6 +76,20 @@ const POSScreen: React.FC = () => {
   const [sales, setSales] = useState<Sale[]>([]);
   const [loadedWebOrderId, setLoadedWebOrderId] = useState<string | null>(null);
   const [showWebOrdersModal, setShowWebOrdersModal] = useState(false);
+
+  const [showAddClientModal, setShowAddClientModal] = useState(false);
+  const [newClient, setNewClient] = useState<Partial<Client>>({ nombre: '', cedula: '', telefono: '', email: '', calle: '', casa: '', referencia: '', puntos: 0, saldo_usd: 0 });
+  const [isSavingClient, setIsSavingClient] = useState(false);
+
+  // Estados para Cuentas Abiertas (Consumo VIP/Mesas)
+  const [openTabs, setOpenTabs] = useState<any[]>([]);
+  const [activeOpenTabId, setActiveOpenTabId] = useState<string | null>(null);
+  const [showOpenTabsModal, setShowOpenTabsModal] = useState(false);
+
+  // Estados para Vuelto Mixto
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [vueltoEntregadoUsd, setVueltoEntregadoUsd] = useState<number>(0);
+  const [vueltoEntregadoBs, setVueltoEntregadoBs] = useState<number>(0);
 
   const [paymentAmounts, setPaymentAmounts] = useState({
     pago_efectivo_usd: 0,
@@ -107,6 +125,14 @@ const POSScreen: React.FC = () => {
       (paymentAmounts.pago_debito_bs || 0)) / (tasaBCV || 1));
 
   const changeUSD = esAbonoWeb ? 0 : Math.max(0, totalPaidUSD - totalUSD);
+  const vueltoRestanteBs = Math.max(0, (changeUSD - vueltoEntregadoUsd) * tasaBCV - vueltoEntregadoBs);
+
+  // Auto-abrir modal de checkout cuando se alcance o supere el total (y haya algo que cobrar)
+  useEffect(() => {
+    if (totalPaidUSD > 0 && totalPaidUSD >= totalUSD && !isPaying) {
+      setShowCheckoutModal(true);
+    }
+  }, [totalPaidUSD, totalUSD, isPaying]);
   const productWebOrders = sales.filter((s: any) => s.origen === 'web' && s.status_pedido !== 'entregado' && s.tipo_transaccion !== 'abono');
   const abonoReports = sales.filter((s: any) => s.origen === 'web' && s.status_pedido !== 'entregado' && s.tipo_transaccion === 'abono');
 
@@ -124,6 +150,7 @@ const POSScreen: React.FC = () => {
     const unsubClients = subscribeToCollection('clients', (data) => setClients(data));
     const unsubPaused = subscribeToCollection('ventas_pausadas', (data) => setPausedSales(data));
     const unsubSales = subscribeToCollection('sales', (data) => setSales(data as Sale[]));
+    const unsubOpenTabs = subscribeToCollection('open_tabs', (data) => setOpenTabs(data));
     const unsubUsers = subscribeToCollection('users', (data) => {
       setDrivers(data.filter((u: any) => u.role === 'repartidor'));
     });
@@ -164,6 +191,7 @@ const POSScreen: React.FC = () => {
       unsubSales();
       unsubTasa();
       unsubUsers();
+      unsubOpenTabs();
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [cart, totalPaidUSD, totalUSD, selectedClient, isFiado, isPaying, paymentAmounts]); // Dependencies for keyboard actions
@@ -263,13 +291,26 @@ const POSScreen: React.FC = () => {
           pieza_id: i.pieza_id || null,
           pieza_numero: i.pieza_numero || null
         })),
-        user_id: 'current-user'
+        user_id: user?.uid || 'current-user',
+        store_id: activeStore?.id || 'main',
+        branch_id: activeStore?.id || 'main',
+        created_by: user?.uid || 'current-user',
+        customer_id: selectedClient?.id || null,
+        items: cart.map(i => ({
+          producto_id: i.id,
+          nombre: i.nombre,
+          cantidad: i.quantity,
+          precio_unitario_usd: i.finalPrice,
+          pieza_id: i.pieza_id || null,
+          pieza_numero: i.pieza_numero || null
+        })),
+        total: totalUSD
       });
-      setCart([]);
-      setSelectedClient(null);
+      resetPOS();
       addToast('success', 'Venta pausada');
-    } catch (err) {
-      addToast('error', 'Error al pausar');
+    } catch (err: any) {
+      console.error("Error Detallado Firebase (Pausar Venta):", err);
+      addToast('error', `Error al pausar: ${err.message || err}`);
     }
   };
 
@@ -302,6 +343,143 @@ const POSScreen: React.FC = () => {
     addToast('info', 'Venta retomada');
   };
 
+  const handleAddClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newClient.nombre || !newClient.cedula) {
+      addToast('error', 'Nombre y cédula son obligatorios');
+      return;
+    }
+    if (clients.some(c => c.cedula === newClient.cedula)) {
+      addToast('error', `Ya existe un cliente con la cédula ${newClient.cedula}`);
+      return;
+    }
+    setIsSavingClient(true);
+    try {
+      const lastSix = newClient.cedula.slice(-6).replace(/\D/g, '');
+      let pinToUse = lastSix;
+      if (pinToUse.length < 6) {
+        pinToUse = pinToUse.padEnd(6, '0');
+      }
+      
+      const newClientObj = { ...newClient, pin: pinToUse } as any;
+      await createClient(newClientObj);
+      
+      // Auto select the new client
+      setSelectedClient({ id: newClientObj.cedula, ...newClientObj } as Client);
+      
+      setShowAddClientModal(false);
+      setNewClient({ nombre: '', cedula: '', telefono: '', email: '', calle: '', casa: '', referencia: '', puntos: 0, saldo_usd: 0 });
+      addToast('success', 'Cliente registrado y seleccionado');
+    } catch (error) {
+      console.error("Error creating client:", error);
+      addToast('error', 'Error al registrar cliente');
+    } finally {
+      setIsSavingClient(false);
+    }
+  };
+
+  const resetPOS = () => {
+    setCart([]);
+    setSelectedClient(null);
+    setIsFiado(false);
+    setActiveOpenTabId(null);
+    setLoadedWebOrderId(null);
+    setPaymentAmounts({
+      pago_efectivo_usd: 0,
+      pago_efectivo_bs: 0,
+      pago_movil_bs: 0,
+      pago_transferencia_bs: 0,
+      biopago_bdv: 0,
+      pago_debito_bs: 0,
+      pago_otros_usd: 0,
+      referencia: '',
+      aprobacion_punto: ''
+    });
+    setVueltoEntregadoUsd(0);
+    setVueltoEntregadoBs(0);
+    setSearchQuery('');
+    setClientSearch('');
+    setShowCheckoutModal(false);
+    setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 100);
+  };
+
+  const handleSaveOpenTab = async () => {
+    if (cart.length === 0) return addToast('error', 'El carrito está vacío');
+    if (!selectedClient) return addToast('error', 'Seleccione un cliente para guardar la cuenta abierta');
+
+    try {
+      const existingTab = openTabs.find((t: any) => t.cliente_id === selectedClient.id);
+      let finalDetalles;
+      let finalTotalUsd = totalUSD;
+
+      if (activeOpenTabId) {
+        // Editando directamente la cuenta activa (carrito sobreescribe)
+        finalDetalles = cart.map(i => ({ 
+          producto_id: i.id, 
+          nombre: i.nombre, 
+          cantidad: i.quantity, 
+          precio_unitario_usd: i.finalPrice,
+          pieza_id: i.pieza_id || null,
+          pieza_numero: i.pieza_numero || null
+        }));
+      } else if (existingTab) {
+        // Agregando nuevos items a una cuenta existente (Acumular)
+        const newItems = cart.map(i => ({ 
+          producto_id: i.id, 
+          nombre: i.nombre, 
+          cantidad: i.quantity, 
+          precio_unitario_usd: i.finalPrice,
+          pieza_id: i.pieza_id || null,
+          pieza_numero: i.pieza_numero || null
+        }));
+        finalDetalles = [...(existingTab.detalles || []), ...newItems];
+        finalTotalUsd = finalDetalles.reduce((sum: number, item: any) => sum + (item.cantidad * item.precio_unitario_usd), 0);
+      } else {
+        // Cuenta totalmente nueva
+        finalDetalles = cart.map(i => ({ 
+          producto_id: i.id, 
+          nombre: i.nombre, 
+          cantidad: i.quantity, 
+          precio_unitario_usd: i.finalPrice,
+          pieza_id: i.pieza_id || null,
+          pieza_numero: i.pieza_numero || null
+        }));
+      }
+
+      const tabData = {
+        fecha_inicio: existingTab ? existingTab.fecha_inicio : new Date().toISOString(),
+        identificador: selectedClient.nombre,
+        cliente_id: selectedClient.id,
+        cliente_nombre: selectedClient.nombre,
+        detalles: finalDetalles,
+        total_usd: finalTotalUsd,
+        store_id: activeStore?.id || 'main',
+        branch_id: activeStore?.id || 'main',
+        created_by: user?.uid || 'current-user',
+        customer_id: selectedClient.id,
+        items: finalDetalles,
+        total: finalTotalUsd
+      };
+
+      const targetTabId = activeOpenTabId || (existingTab ? existingTab.id : null);
+
+      if (targetTabId) {
+        await updateDocument('open_tabs', targetTabId, tabData);
+        addToast('success', 'Cuenta actualizada exitosamente');
+      } else {
+        await addDocument('open_tabs', tabData);
+        addToast('success', 'Nueva cuenta abierta guardada');
+      }
+
+      resetPOS();
+    } catch (e: any) {
+      console.error("Error Detallado Firebase (Cuentas Abiertas):", e);
+      addToast('error', `Error al guardar: ${e.message || e}`);
+    }
+  };
+
   const handleFinalize = async () => {
     if (isPaying || (cart.length === 0 && !esAbonoWeb)) return;
     setIsPaying(true);
@@ -330,6 +508,8 @@ const POSScreen: React.FC = () => {
               pieza_numero: i.pieza_numero || null
             })),
         ...paymentAmounts,
+        vuelto_usd: changeUSD > 0 ? vueltoEntregadoUsd : 0,
+        vuelto_bs: changeUSD > 0 ? (vueltoRestanteBs > 0 ? vueltoRestanteBs : 0) + vueltoEntregadoBs : 0,
         vuelto_entregado_usd: esAbonoWeb ? 0 : changeUSD,
         saldo_pendiente_usd: esAbonoWeb ? 0 : Math.max(0, totalUSD - totalPaidUSD),
         user_id: 'current-user',
@@ -434,21 +614,11 @@ const POSScreen: React.FC = () => {
         }
       }
 
-      setCart([]);
-      setSelectedClient(null);
-      setIsFiado(false);
-      setLoadedWebOrderId(null);
-      setPaymentAmounts({
-        pago_efectivo_usd: 0,
-        pago_efectivo_bs: 0,
-        pago_movil_bs: 0,
-        pago_transferencia_bs: 0,
-        biopago_bdv: 0,
-        pago_debito_bs: 0,
-        pago_otros_usd: 0,
-        referencia: '',
-        aprobacion_punto: ''
-      });
+      if (activeOpenTabId) {
+        await deleteDocument('open_tabs', activeOpenTabId);
+      }
+
+      resetPOS();
     } catch (err: any) {
       if (err.message === 'PIECE_ALREADY_SOLD') {
         addToast('error', '⚠️ Una de las piezas seleccionadas acaba de ser vendida por otro cajero. Por favor, retírala del carrito y elige otra.');
@@ -574,146 +744,247 @@ const POSScreen: React.FC = () => {
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="grid grid-cols-1 lg:grid-cols-12 gap-8 min-h-full pb-20"
+      className="relative grid grid-cols-1 lg:grid-cols-12 gap-6 h-[calc(100vh-5rem)] overflow-hidden"
     >
-      {/* Columna Izquierda: Productos y Carrito */}
-      <div className="lg:col-span-8 flex flex-col gap-6">
-        <div className="bg-white/5 border border-white/10 p-4 rounded-3xl relative backdrop-blur-xl z-40">
-          <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
-            <span className="text-[10px] font-black bg-white/10 px-1.5 py-0.5 rounded text-gray-400">F1</span>
-            <Search className="text-gray-500" size={18} />
-          </div>
-          <input 
-            ref={searchInputRef}
-            id="product_search_input"
-            type="text"
-            className="w-full bg-black/20 border border-white/10 rounded-2xl py-4 pl-20 pr-4 font-bold text-white focus:border-blue-500/50 outline-none transition-all"
-            placeholder="Buscar producto..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && filteredProducts.length > 0) {
-                addToCart(filteredProducts[0]);
-              }
-            }}
-          />
-          <AnimatePresence>
-            {searchQuery && (
-              <motion.div 
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="absolute top-full left-0 right-0 mt-2 bg-[#1e293b] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden backdrop-blur-2xl"
-              >
-                {filteredProducts.map(p => (
-                  <button 
-                    key={p.id} 
-                    onClick={() => addToCart(p)} 
-                    className="w-full p-4 flex items-center justify-between hover:bg-white/5 text-left border-b border-white/5 last:border-0 transition-colors"
-                  >
-                    <div>
-                      <div className="font-bold text-white">{p.nombre}</div>
-                      <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest">
-                        Cod: {p.codigo} — <span className={p.stock < p.stock_minimo ? "text-red-400" : "text-blue-400"}>Stock: {p.stock}</span>
+      {/* Columna Izquierda: Buscadores y Carrito */}
+      <div className="lg:col-span-8 flex flex-col gap-4 h-full z-40 relative">
+        {/* Fila de Buscadores */}
+        <div className="flex flex-col lg:flex-row gap-4 shrink-0 w-full relative z-50">
+          {/* BUSCADOR DE PRODUCTOS (65%) */}
+          <div className="w-full lg:w-[65%] bg-white/5 border border-white/10 p-4 rounded-3xl relative backdrop-blur-xl">
+            <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+              <span className="text-[10px] font-black bg-white/10 px-1.5 py-0.5 rounded text-gray-400">F1</span>
+              <Search className="text-gray-500" size={18} />
+            </div>
+            <input 
+              ref={searchInputRef}
+              id="product_search_input"
+              type="text"
+              name="kalu-search-prod-dummy"
+              autoComplete="new-password"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              className="w-full bg-black/20 border border-white/10 rounded-2xl py-4 pl-20 pr-4 font-bold text-white focus:border-blue-500/50 outline-none transition-all"
+              placeholder="Buscar producto..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && filteredProducts.length > 0) {
+                  addToCart(filteredProducts[0]);
+                }
+              }}
+            />
+            <AnimatePresence>
+              {searchQuery && (
+                <motion.div 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="absolute top-full left-0 right-0 mt-2 bg-[#1e293b] border border-white/10 rounded-2xl shadow-2xl z-[999] overflow-hidden backdrop-blur-2xl"
+                >
+                  {filteredProducts.map(p => (
+                    <button 
+                      key={p.id} 
+                      onClick={() => addToCart(p)} 
+                      className="w-full p-4 flex items-center justify-between hover:bg-white/5 text-left border-b border-white/5 last:border-0 transition-colors"
+                    >
+                      <div>
+                        <div className="font-bold text-white">{p.nombre}</div>
+                        <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest">
+                          Cod: {p.codigo} — <span className={p.stock < p.stock_minimo ? "text-red-400" : "text-blue-400"}>Stock: {p.stock}</span>
+                        </div>
                       </div>
-                    </div>
-                    <div className="text-[#2ecc71] font-black text-lg">{formatCurrency(p.precio_oferta_usd || p.precio_normal_usd)}</div>
-                  </button>
-                ))}
-                {filteredProducts.length === 0 && (
-                  <div className="p-8 text-center text-gray-500 font-bold uppercase text-xs tracking-[4px]">Sin resultados</div>
-                )}
+                      <div className="text-[#2ecc71] font-black text-lg">{formatCurrency(p.precio_oferta_usd || p.precio_normal_usd)}</div>
+                    </button>
+                  ))}
+                  {filteredProducts.length === 0 && (
+                    <div className="p-8 text-center text-gray-500 font-bold uppercase text-xs tracking-[4px]">Sin resultados</div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* BUSCADOR DE CLIENTES (35%) */}
+          <div className="w-full lg:w-[35%] bg-white/5 border border-white/10 p-4 rounded-3xl relative backdrop-blur-xl">
+            {!selectedClient ? (
+              <>
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 z-10">
+                  <span className="text-[10px] font-black bg-white/10 px-1.5 py-0.5 rounded text-gray-400">F2</span>
+                  <Search className="text-gray-500" size={18} />
+                </div>
+                <input 
+                  id="cliente_search_input"
+                  type="text"
+                  name="kalu-search-client-dummy"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  className="w-full bg-black/20 border border-white/10 rounded-2xl py-4 pl-20 pr-4 font-bold text-white focus:border-blue-500/50 outline-none transition-all"
+                  placeholder="Cédula o Nombre..." 
+                  value={clientSearch} 
+                  onChange={e => setClientSearch(e.target.value)} 
+                />
+                  <AnimatePresence>
+                    {clientSearch && (
+                      <motion.div 
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        className="absolute top-full left-0 right-0 mt-2 bg-[#1e293b] border border-white/10 rounded-2xl shadow-2xl z-[999] max-h-60 overflow-y-auto backdrop-blur-2xl"
+                      >
+                        {filteredClients.map(c => (
+                          <button 
+                            key={c.id} 
+                            onClick={() => { setSelectedClient(c); setClientSearch(''); }} 
+                            className="w-full p-4 hover:bg-white/5 text-left border-b border-white/5 last:border-0 flex items-center justify-between group"
+                          >
+                            <div>
+                              <div className="font-black text-xs text-white uppercase group-hover:text-blue-400 transition-colors">{String(c.nombre)}</div>
+                              <div className="text-[9px] text-gray-500 font-bold tracking-widest">{String(c.cedula)}</div>
+                            </div>
+                            <ArrowRight size={14} className="text-gray-700 group-hover:text-blue-400" />
+                          </button>
+                        ))}
+                        {filteredClients.length === 0 && (
+                          <button 
+                            onClick={() => navigate('/clients')}
+                            className="w-full p-6 text-center text-blue-400 text-[10px] font-black uppercase tracking-widest hover:bg-blue-500/5"
+                          >
+                            + Registrar Nuevo
+                          </button>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+              </>
+            ) : (
+              <motion.div 
+                initial={{ scale: 0.9 }}
+                animate={{ scale: 1 }}
+                className="bg-blue-500/10 border border-blue-500/20 p-5 rounded-2xl flex justify-between items-center h-full"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center text-white font-black">
+                    {selectedClient.nombre.substring(0, 1)}
+                  </div>
+                  <div>
+                    <p className="font-black text-xs text-white uppercase tracking-tight">{String(selectedClient.nombre)}</p>
+                    <p className="text-[10px] text-blue-400 font-bold">{String(selectedClient.cedula)}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setSelectedClient(null)} 
+                  className="w-8 h-8 flex items-center justify-center text-red-500 hover:bg-red-500/10 rounded-full transition-colors"
+                >
+                  <RotateCcw size={18}/>
+                </button>
               </motion.div>
             )}
-          </AnimatePresence>
+          </div>
         </div>
 
+        {/* Cesta de Venta */}
         <div className="flex-1 bg-white/5 border border-white/10 rounded-[2.5rem] flex flex-col overflow-hidden backdrop-blur-xl">
-          <div className="p-6 border-b border-white/5 bg-black/20 flex justify-between items-center">
-            <h2 className="font-black flex items-center gap-3 text-sm tracking-[2px] uppercase">
-              <div className="p-2 bg-blue-500/10 rounded-xl">
-                <ShoppingCart size={18} className="text-blue-400"/>
-              </div>
-              Cesta de Venta
-            </h2>
-            <div className="flex items-center gap-3">
-              <button 
-                onClick={() => setShowWebOrdersModal(true)}
-                className="text-[10px] font-black text-green-400 bg-green-500/10 px-4 py-2 rounded-xl hover:bg-green-500 hover:text-white transition-all uppercase tracking-widest border border-green-500/20 flex items-center gap-1.5"
+          <div className="p-4 border-b border-white/5 bg-black/20 flex flex-row items-center justify-between gap-1 w-full overflow-hidden">
+            <button 
+              onClick={() => navigate('/')}
+              className="flex-none w-auto text-xs px-3 font-black text-rose-300 bg-rose-950/40 py-1.5 whitespace-nowrap rounded-xl hover:bg-rose-900/50 transition-all uppercase tracking-widest border border-rose-500/30 flex items-center justify-center gap-1.5 shadow-sm"
+              title="Volver Atrás"
+            >
+              <ArrowLeft size={14} /> Salir
+            </button>
+            <button 
+              onClick={() => setShowAddClientModal(true)}
+              className="flex-1 text-xs font-bold text-cyan-200 bg-cyan-950/40 py-1.5 px-1 whitespace-nowrap rounded-xl hover:bg-cyan-900/50 transition-all uppercase tracking-widest border border-cyan-500/30 flex items-center justify-center gap-1.5 shadow-sm"
+            >
+              <UserPlus size={14} /> Nuevo Cliente
+            </button>
+            {activeStore?.features?.hasOpenTabs !== false && (
+              <button
+                onClick={() => setShowOpenTabsModal(true)}
+                className="flex-1 text-xs font-bold text-cyan-200 bg-cyan-950/40 py-1.5 px-1 whitespace-nowrap rounded-xl hover:bg-cyan-900/50 transition-all uppercase tracking-widest border border-cyan-500/30 flex items-center justify-center gap-1.5 shadow-sm"
               >
-                <span>📦 Pedidos Web</span>
-                {(productWebOrders.length + abonoReports.length) > 0 && (
-                  <span className="w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center font-black text-[9px] leading-none animate-pulse">
-                    {productWebOrders.length + abonoReports.length}
+                <span className="flex items-center gap-1"><span className="text-sm">🥂</span> Cuentas Activas</span>
+                {openTabs.length > 0 && (
+                  <span className="w-4 h-4 bg-cyan-200 text-cyan-900 rounded-full flex items-center justify-center font-black text-[9px] leading-none ml-1">
+                    {openTabs.length}
                   </span>
                 )}
               </button>
-              <button 
-                onClick={() => navigate('/closure')}
-                className="text-[10px] font-black text-blue-400 bg-blue-400/10 px-4 py-2 rounded-xl hover:bg-blue-500 hover:text-white transition-all uppercase tracking-widest border border-blue-500/20 flex items-center gap-2"
-              >
-                <ShieldCheck size={14} /> Cierre
-              </button>
-              <div className="flex -space-x-2 mr-2">
-                {pausedSales.map((s, i) => (
-                  <button 
-                    key={s.id} 
-                    onClick={() => resumeSaleFromDB(s)}
-                    className="w-8 h-8 rounded-full bg-orange-500 border-2 border-[#0f172a] text-[10px] font-black flex items-center justify-center hover:scale-110 transition-all shadow-lg text-white"
-                    title={`Retomar venta de $${s.total_usd}`}
-                  >
-                    {i + 1}
-                  </button>
-                ))}
-              </div>
-              <button 
-                onClick={pauseCurrentSale} 
-                disabled={cart.length === 0} 
-                className="text-[10px] font-black text-orange-400 bg-orange-400/10 px-4 py-2 rounded-xl hover:bg-orange-500 hover:text-white transition-all uppercase tracking-widest disabled:opacity-30 border border-orange-500/20"
-              >
-                Pausar (F3)
-              </button>
-              {loadedWebOrderId ? (
-                <button 
-                  onClick={async () => {
-                    const orderId = loadedWebOrderId;
-                    const loadedOrder = sales.find(s => s.id === orderId);
-                    
-                    // 1. Eliminar el pedido de la base de datos
-                    await deleteDocument('sales', orderId);
-                    
-                    // 2. Avisar al usuario enviando un mensaje directo
-                    if (loadedOrder && loadedOrder.cliente_id) {
-                      const today = new Date().toISOString();
-                      await addDocument('mensajes', {
-                        cliente_id: loadedOrder.cliente_id,
-                        fecha: today,
-                        titulo: "❌ Pedido Web Cancelado",
-                        contenido: `Tu pedido #${loadedOrder.codigo_pedido || orderId.substring(0, 8)} ha sido descartado de la caja por el personal de tienda. Si ya realizaste un pago, por favor contacta al cajero.`,
-                        leido: false
-                      });
-                    }
-                    
-                    // 3. Limpiar estado en el POS
-                    setCart([]);
-                    setSelectedClient(null);
-                    setLoadedWebOrderId(null);
-                    setIsFiado(false);
-                    addToast('warning', 'Pedido web descartado y eliminado del sistema');
-                  }} 
-                  className="text-[10px] font-black text-red-400 bg-red-500/10 px-4 py-2 rounded-xl hover:bg-red-500 hover:text-white transition-all uppercase tracking-widest border border-red-500/20"
-                >
-                  Descartar Pedido
-                </button>
-              ) : (
-                <button 
-                  onClick={() => setIsAuthModalOpen(true)} 
-                  className="text-[10px] font-black text-red-500 bg-red-500/10 px-4 py-2 rounded-xl hover:bg-red-500 hover:text-white transition-all uppercase tracking-widest border border-red-500/20"
-                >
-                  Vaciar (F4)
-                </button>
+            )}
+            <button 
+              onClick={() => setShowWebOrdersModal(true)}
+              className="flex-1 text-xs font-bold text-cyan-200 bg-cyan-950/40 py-1.5 px-1 whitespace-nowrap rounded-xl hover:bg-cyan-900/50 transition-all uppercase tracking-widest border border-cyan-500/30 flex items-center justify-center gap-1.5 shadow-sm"
+            >
+              <span className="flex items-center gap-1"><span className="text-sm">📦</span> Pedidos Web</span>
+              {(productWebOrders.length + abonoReports.length) > 0 && (
+                <span className="w-4 h-4 bg-cyan-200 text-cyan-900 rounded-full flex items-center justify-center font-black text-[9px] leading-none animate-pulse ml-1">
+                  {productWebOrders.length + abonoReports.length}
+                </span>
               )}
+            </button>
+            <div className="flex -space-x-2">
+              {pausedSales.map((s, i) => (
+                <button 
+                  key={s.id} 
+                  onClick={() => resumeSaleFromDB(s)}
+                  className="w-8 h-8 rounded-full bg-cyan-500 border-2 border-[#0f172a] text-[10px] font-black flex items-center justify-center hover:scale-110 transition-all shadow-lg text-cyan-950 z-10 relative"
+                  title={`Retomar venta de $${s.total_usd}`}
+                >
+                  {i + 1}
+                </button>
+              ))}
             </div>
+            <button 
+              onClick={pauseCurrentSale} 
+              disabled={cart.length === 0} 
+              className="flex-1 text-xs font-bold text-cyan-200 bg-cyan-950/40 py-1.5 px-1 whitespace-nowrap rounded-xl hover:bg-cyan-900/50 transition-all uppercase tracking-widest disabled:opacity-50 border border-cyan-500/30 flex items-center justify-center gap-1.5 shadow-sm"
+            >
+              <Pause size={14} /> Pausar (F3)
+            </button>
+            {loadedWebOrderId ? (
+              <button 
+                onClick={async () => {
+                  const orderId = loadedWebOrderId;
+                  const loadedOrder = sales.find(s => s.id === orderId);
+                  
+                  // 1. Eliminar el pedido de la base de datos
+                  await deleteDocument('sales', orderId);
+                  
+                  // 2. Avisar al usuario enviando un mensaje directo
+                  if (loadedOrder && loadedOrder.cliente_id) {
+                    const today = new Date().toISOString();
+                    await addDocument('mensajes', {
+                      cliente_id: loadedOrder.cliente_id,
+                      fecha: today,
+                      titulo: "❌ Pedido Web Cancelado",
+                      contenido: `Tu pedido #${loadedOrder.codigo_pedido || orderId.substring(0, 8)} ha sido descartado de la caja por el personal de tienda. Si ya realizaste un pago, por favor contacta al cajero.`,
+                      leido: false
+                    });
+                  }
+                  
+                  // 3. Limpiar estado en el POS
+                  setCart([]);
+                  setSelectedClient(null);
+                  setLoadedWebOrderId(null);
+                  setIsFiado(false);
+                  addToast('warning', 'Pedido web descartado y eliminado del sistema');
+                }} 
+                className="flex-1 text-xs font-bold text-cyan-200 bg-cyan-950/40 py-1.5 px-1 whitespace-nowrap rounded-xl hover:bg-cyan-900/50 transition-all uppercase tracking-widest border border-cyan-500/30 flex items-center justify-center gap-1.5 shadow-sm"
+              >
+                Descartar Pedido
+              </button>
+            ) : (
+              <button 
+                onClick={() => setIsAuthModalOpen(true)} 
+                className="flex-1 text-xs font-bold text-cyan-200 bg-cyan-950/40 py-1.5 px-1 whitespace-nowrap rounded-xl hover:bg-cyan-900/50 transition-all uppercase tracking-widest border border-cyan-500/30 flex items-center justify-center gap-1.5 shadow-sm"
+              >
+                <Trash2 size={14} /> Vaciar (F4)
+              </button>
+            )}
           </div>
           
           <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
@@ -762,7 +1033,7 @@ const POSScreen: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   <AnimatePresence>
-                    {cart.map(item => (
+                    {cart.map((item, index) => (
                       <motion.tr 
                         key={item.id}
                         initial={{ opacity: 0, x: -20 }}
@@ -822,7 +1093,22 @@ const POSScreen: React.FC = () => {
                             </button>
                           </div>
                         </td>
-                        <td className="py-4 text-right text-gray-400 font-medium">{formatCurrency(item.finalPrice)}</td>
+                        <td className="py-4 text-right text-gray-400 font-medium">
+                          {user?.role === 'cajero' ? (
+                            formatCurrency(item.finalPrice)
+                          ) : (
+                            <input 
+                              type="number"
+                              value={item.finalPrice}
+                              onChange={(e) => {
+                                const newCart = [...cart];
+                                newCart[index].finalPrice = parseFloat(e.target.value) || 0;
+                                setCart(newCart);
+                              }}
+                              className="w-20 bg-black/40 border border-white/5 rounded-lg p-1 text-right focus:border-[#3498db] outline-none text-white font-bold"
+                            />
+                          )}
+                        </td>
                         <td className="py-4 text-right font-black text-green-400 text-base">{formatCurrency(item.finalPrice * item.quantity)}</td>
                       </motion.tr>
                     ))}
@@ -832,120 +1118,22 @@ const POSScreen: React.FC = () => {
             )}
           </div>
 
-          <div className="p-8 bg-black/40 border-t border-white/5 flex flex-wrap justify-between items-center gap-4">
-            <div>
-              <p className="text-[10px] text-gray-500 font-black uppercase tracking-[4px] mb-1">Total a Cobrar</p>
+          <div className="p-6 bg-black/40 border-t border-white/5 flex justify-center items-center gap-4">
+            <div className="text-center">
+              <p className="text-[10px] text-gray-500 font-black uppercase tracking-[4px] mb-1">TOTAL A COBRAR EN BS</p>
               <p className="text-2xl md:text-3xl font-black text-yellow-500">Bs. {totalBs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}</p>
             </div>
-            <div className="text-right">
-              <p className="text-[10px] text-gray-500 font-black uppercase tracking-[4px] mb-1">Importe Neto</p>
-              <div className="flex items-baseline gap-2">
-                <span className="text-xl font-bold text-green-400/50">$</span>
-                <span className="text-5xl md:text-6xl font-black text-green-400 tracking-tighter leading-none">{totalUSD.toFixed(2)}</span>
-              </div>
-            </div>
           </div>
-          {(cart.length > 0 || esAbonoWeb) && (
-            <div className="p-6 pt-0">
-              <button 
-                onClick={() => document.getElementById('pago_efectivo_usd_input')?.focus()}
-                className="w-full py-5 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-black rounded-[2rem] flex items-center justify-center gap-4 shadow-xl shadow-blue-500/20 transition-all active:scale-95 group border border-blue-400/20"
-              >
-                <div className="p-2 bg-white/20 rounded-xl group-hover:rotate-12 transition-transform">
-                  <CreditCard size={20} />
-                </div>
-                <span className="tracking-[3px] uppercase text-xs">Ir a Cobrar (F8)</span>
-                <ArrowRight size={20} className="ml-2 group-hover:translate-x-2 transition-transform" />
-              </button>
-            </div>
-          )}
+
         </div>
       </div>
-
-      {/* Columna Derecha: Cliente y Pagos */}
-      <div className="lg:col-span-4 flex flex-col gap-6">
-        {/* Widget Cliente */}
-        <div className="bg-white/5 border border-white/10 p-6 rounded-[2.5rem] backdrop-blur-xl relative z-30">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[3px]">Identificación</h3>
-            <User size={16} className="text-gray-600" />
-          </div>
-          
-          {!selectedClient ? (
-            <div className="space-y-4">
-              <div className="relative">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 z-10">
-                   <span className="text-[9px] font-black bg-white/10 px-1 py-0.5 rounded text-gray-500">F2</span>
-                   <Search className="text-gray-600" size={14} />
-                </div>
-                <input 
-                  id="cliente_search_input"
-                  className="w-full bg-black/30 border border-white/5 rounded-2xl py-4 pl-14 pr-4 text-sm font-bold text-white focus:border-blue-500/30 outline-none" 
-                  placeholder="Cédula o Nombre..." 
-                  value={clientSearch} 
-                  onChange={e => setClientSearch(e.target.value)} 
-                />
-                <AnimatePresence>
-                  {clientSearch && (
-                    <motion.div 
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      className="absolute top-full left-0 right-0 mt-2 bg-[#1e293b] border border-white/10 rounded-2xl shadow-2xl z-50 max-h-60 overflow-y-auto backdrop-blur-2xl"
-                    >
-                      {filteredClients.map(c => (
-                        <button 
-                          key={c.id} 
-                          onClick={() => { setSelectedClient(c); setClientSearch(''); }} 
-                          className="w-full p-4 hover:bg-white/5 text-left border-b border-white/5 last:border-0 flex items-center justify-between group"
-                        >
-                          <div>
-                            <div className="font-black text-xs text-white uppercase group-hover:text-blue-400 transition-colors">{String(c.nombre)}</div>
-                            <div className="text-[9px] text-gray-500 font-bold tracking-widest">{String(c.cedula)}</div>
-                          </div>
-                          <ArrowRight size={14} className="text-gray-700 group-hover:text-blue-400" />
-                        </button>
-                      ))}
-                      {filteredClients.length === 0 && (
-                        <button 
-                          onClick={() => navigate('/clients')}
-                          className="w-full p-6 text-center text-blue-400 text-[10px] font-black uppercase tracking-widest hover:bg-blue-500/5"
-                        >
-                          + Registrar Nuevo
-                        </button>
-                      )}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </div>
-          ) : (
-            <motion.div 
-              initial={{ scale: 0.9 }}
-              animate={{ scale: 1 }}
-              className="bg-blue-500/10 border border-blue-500/20 p-5 rounded-2xl flex justify-between items-center"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center text-white font-black">
-                  {selectedClient.nombre.substring(0, 1)}
-                </div>
-                <div>
-                  <p className="font-black text-xs text-white uppercase tracking-tight">{String(selectedClient.nombre)}</p>
-                  <p className="text-[10px] text-blue-400 font-bold">{String(selectedClient.cedula)}</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setSelectedClient(null)} 
-                className="w-8 h-8 flex items-center justify-center text-red-500 hover:bg-red-500/10 rounded-full transition-colors"
-              >
-                <RotateCcw size={18}/>
-              </button>
-            </motion.div>
-          )}
-        </div>
+      {/* Columna Derecha: Pagos */}
+      <div className="lg:col-span-4 flex flex-col gap-6 overflow-hidden h-full z-30 relative">
 
         {/* Widget Cobro */}
-        <div className="flex-1 bg-white/5 border border-white/10 p-8 rounded-[2.5rem] flex flex-col gap-6 backdrop-blur-xl relative z-20">
+        <div className="flex-1 bg-white/5 border border-white/10 p-6 md:p-8 rounded-[2.5rem] flex flex-col gap-4 overflow-y-auto backdrop-blur-xl relative z-20 custom-scrollbar">
+
+
           <div className="flex items-center justify-between">
             <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[3px]">Métodos de Pago</h3>
             <CreditCard size={16} className="text-gray-600" />
@@ -1014,34 +1202,36 @@ const POSScreen: React.FC = () => {
             </div>
           </div>
 
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div className="space-y-3">
+            <div className="flex flex-col gap-3">
               <div className="space-y-1">
                 <label className="text-[9px] text-gray-500 font-black uppercase ml-1 tracking-widest">Efectivo $</label>
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-green-500/50 font-bold text-sm">$</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-green-500/50 font-bold text-sm">$</span>
                   <input 
                     id="pago_efectivo_usd_input"
                     type="number" 
-                    className="w-full bg-black/40 border border-white/5 rounded-2xl p-4 pl-10 text-right text-green-400 font-black text-lg focus:border-green-500/30 outline-none" 
+                    className="w-full bg-black/40 border border-white/5 rounded-xl p-2 pl-8 text-right text-green-400 font-black text-lg focus:border-green-500/30 outline-none" 
                     placeholder="0.00"
                     value={paymentAmounts.pago_efectivo_usd || ''} 
                     onFocus={() => handlePaymentFocus('pago_efectivo_usd')}
-                    onChange={e => setPaymentAmounts({...paymentAmounts, pago_efectivo_usd: parseFloat(e.target.value) || 0})} 
+                    onChange={e => setPaymentAmounts({...paymentAmounts, pago_efectivo_usd: parseFloat(e.target.value) || 0})}
+                    onKeyDown={e => e.key === 'Enter' && setShowCheckoutModal(true)}
                   />
                 </div>
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] text-gray-500 font-black uppercase ml-1 tracking-widest">Efectivo Bs</label>
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500/50 font-bold text-sm">Bs</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500/50 font-bold text-sm">Bs</span>
                   <input 
                     type="number" 
-                    className="w-full bg-black/40 border border-white/5 rounded-2xl p-4 pl-12 text-right text-blue-400 font-black text-lg focus:border-blue-500/30 outline-none" 
+                    className="w-full bg-black/40 border border-white/5 rounded-xl p-2 pl-10 text-right text-blue-400 font-black text-lg focus:border-blue-500/30 outline-none" 
                     placeholder="0.00"
                     value={paymentAmounts.pago_efectivo_bs || ''} 
                     onFocus={() => handlePaymentFocus('pago_efectivo_bs')}
-                    onChange={e => setPaymentAmounts({...paymentAmounts, pago_efectivo_bs: parseFloat(e.target.value) || 0})} 
+                    onChange={e => setPaymentAmounts({...paymentAmounts, pago_efectivo_bs: parseFloat(e.target.value) || 0})}
+                    onKeyDown={e => e.key === 'Enter' && setShowCheckoutModal(true)}
                   />
                 </div>
               </div>
@@ -1051,120 +1241,276 @@ const POSScreen: React.FC = () => {
               <label className="text-[9px] text-gray-500 font-black uppercase ml-1 tracking-widest">Pago Móvil (Bs)</label>
               <input 
                 type="number" 
-                className="w-full bg-black/40 border border-white/5 rounded-2xl p-4 text-right text-purple-400 font-black text-lg focus:border-purple-500/30 outline-none" 
+                className="w-full bg-black/40 border border-white/5 rounded-xl p-2 text-right text-purple-400 font-black text-lg focus:border-purple-500/30 outline-none" 
                 placeholder="0.00"
                 value={paymentAmounts.pago_movil_bs || ''} 
                 onFocus={() => handlePaymentFocus('pago_movil_bs')}
-                onChange={e => setPaymentAmounts({...paymentAmounts, pago_movil_bs: parseFloat(e.target.value) || 0})} 
+                onChange={e => setPaymentAmounts({...paymentAmounts, pago_movil_bs: parseFloat(e.target.value) || 0})}
+                onKeyDown={e => e.key === 'Enter' && setShowCheckoutModal(true)}
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-3">
               <div className="space-y-1">
                 <label className="text-[9px] text-gray-500 font-black uppercase ml-1 tracking-widest">Biopago BDV (Bs)</label>
                 <input 
                   type="number" 
-                  className="w-full bg-black/40 border border-white/5 rounded-2xl p-4 text-right text-orange-400 font-black text-lg focus:border-orange-500/30 outline-none" 
+                  className="w-full bg-black/40 border border-white/5 rounded-xl p-2 text-right text-orange-400 font-black text-lg focus:border-orange-500/30 outline-none" 
                   placeholder="0.00"
                   value={paymentAmounts.biopago_bdv || ''} 
                   onFocus={() => handlePaymentFocus('biopago_bdv')}
-                  onChange={e => setPaymentAmounts({...paymentAmounts, biopago_bdv: parseFloat(e.target.value) || 0})} 
+                  onChange={e => setPaymentAmounts({...paymentAmounts, biopago_bdv: parseFloat(e.target.value) || 0})}
+                  onKeyDown={e => e.key === 'Enter' && setShowCheckoutModal(true)}
                 />
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] text-gray-500 font-black uppercase ml-1 tracking-widest">Tarjeta Débito (Bs)</label>
                 <input 
                   type="number" 
-                  className="w-full bg-black/40 border border-white/5 rounded-2xl p-4 text-right text-blue-400 font-black text-lg focus:border-blue-500/30 outline-none" 
+                  className="w-full bg-black/40 border border-white/5 rounded-xl p-2 text-right text-blue-400 font-black text-lg focus:border-blue-500/30 outline-none" 
                   placeholder="0.00"
                   value={paymentAmounts.pago_debito_bs || ''} 
                   onFocus={() => handlePaymentFocus('pago_debito_bs')}
-                  onChange={e => setPaymentAmounts({...paymentAmounts, pago_debito_bs: parseFloat(e.target.value) || 0})} 
-                />
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-white/5">
-              <div className="space-y-1">
-                <label className="text-[9px] text-gray-500 font-black uppercase ml-1 tracking-widest">Ref. Pago Móvil</label>
-                <input 
-                  type="text" 
-                  className="w-full bg-black/40 border border-white/5 rounded-2xl p-4 text-center text-white font-black text-xs focus:border-blue-500/30 outline-none" 
-                  placeholder="Referencia..."
-                  value={paymentAmounts.referencia || ''} 
-                  onChange={e => setPaymentAmounts({...paymentAmounts, referencia: e.target.value})} 
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] text-gray-500 font-black uppercase ml-1 tracking-widest">Aprobación Punto</label>
-                <input 
-                  type="text" 
-                  className="w-full bg-black/40 border border-white/5 rounded-2xl p-4 text-center text-white font-black text-xs focus:border-orange-500/30 outline-none" 
-                  placeholder="Código..."
-                  value={paymentAmounts.aprobacion_punto || ''} 
-                  onChange={e => setPaymentAmounts({...paymentAmounts, aprobacion_punto: e.target.value})} 
+                  onChange={e => setPaymentAmounts({...paymentAmounts, pago_debito_bs: parseFloat(e.target.value) || 0})}
+                  onKeyDown={e => e.key === 'Enter' && setShowCheckoutModal(true)}
                 />
               </div>
             </div>
           </div>
-
-          <AnimatePresence>
-            {changeUSD > 0 && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="p-6 bg-green-500/10 border border-green-500/20 rounded-[2rem] text-center shadow-2xl shadow-green-500/5 overflow-hidden"
-              >
-                <div className="text-[9px] font-black text-green-500 uppercase tracking-[4px] mb-2 leading-none">Cambio para entregar</div>
-                <div className="text-4xl font-black text-green-400 leading-none mb-1">$ {changeUSD.toFixed(2)}</div>
-                <div className="text-[10px] font-bold text-green-500/60 uppercase tracking-widest">Equivale a Bs. {(changeUSD * tasaBCV).toFixed(2)}</div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
+            
           <div className="mt-auto space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <button 
-                onClick={handleFinalize}
-                disabled={isPaying}
-                className="bg-blue-600 hover:bg-blue-500 text-white p-5 rounded-2xl font-black text-xs uppercase tracking-[3px] flex items-center justify-center gap-2 shadow-2xl shadow-blue-500/20 active:scale-95 transition-all"
-              >
-                <CheckCircle size={18} /> FACTURAR
-              </button>
-              <button 
-                onClick={() => {
-                  if(!selectedClient) {
-                    addToast('error', 'Seleccione un cliente para fiar');
-                    return;
-                  }
-                  setIsFiado(true);
-                  handleFinalize();
-                }}
-                disabled={isPaying}
-                className="bg-red-500/10 hover:bg-red-500/20 text-red-400 p-5 rounded-2xl font-black text-[9px] uppercase tracking-widest border border-red-500/20 active:scale-95 transition-all"
-              >
-                FALLÓ PAGO (FIADO)
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between p-4 bg-black/20 rounded-2xl border border-white/5">
-              <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">¿Venta a Crédito?</span>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" checked={isFiado} onChange={e => setIsFiado(e.target.checked)} className="sr-only peer" />
-                <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-400 after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500 peer-checked:after:bg-white"></div>
-              </label>
-            </div>
+            <button 
+              onClick={() => setShowCheckoutModal(true)}
+              disabled={isPaying || totalUSD === 0}
+              className="w-full bg-green-600 hover:bg-green-500 text-white p-5 rounded-2xl font-black text-sm uppercase tracking-[3px] flex items-center justify-center gap-2 shadow-2xl shadow-green-500/20 active:scale-95 transition-all"
+            >
+              <CheckCircle size={20} /> PROCEDER AL COBRO
+            </button>
           </div>
         </div>
       </div>
+      {/* Fin Columna Derecha */}
 
       <SupervisorCodeModal 
         isOpen={isAuthModalOpen} 
         onClose={() => setIsAuthModalOpen(false)} 
-        onSuccess={() => { setCart([]); setLoadedWebOrderId(null); setIsAuthModalOpen(false); addToast('info', 'Carrito vaciado'); }} 
+        onSuccess={() => { resetPOS(); setIsAuthModalOpen(false); addToast('info', 'Carrito vaciado'); }} 
         title="Autorizar Limpieza" 
       />
+
+      {/* --- MODAL CREACIÓN RÁPIDA DE CLIENTE --- */}
+      <AnimatePresence>
+        {showAddClientModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-[#111] border border-white/10 rounded-[2rem] w-full max-w-md overflow-hidden shadow-2xl flex flex-col"
+            >
+              <div className="p-6 border-b border-white/5 flex justify-between items-center bg-blue-500/10">
+                <div>
+                  <h2 className="text-xl font-black text-white flex items-center gap-2">
+                    NUEVO CLIENTE
+                  </h2>
+                  <p className="text-xs text-blue-400 font-bold uppercase tracking-widest mt-1">
+                    Registro Rápido
+                  </p>
+                </div>
+                <button 
+                  onClick={() => setShowAddClientModal(false)}
+                  className="p-2 hover:bg-white/5 rounded-xl transition-colors text-gray-400 hover:text-white"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <form onSubmit={handleAddClient} className="p-6 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-2">Nombre Completo *</label>
+                    <input 
+                      required
+                      type="text" 
+                      className="w-full bg-black/20 border border-white/10 rounded-2xl p-3 focus:outline-none focus:border-blue-500 transition-all font-bold text-white text-sm" 
+                      placeholder="Ej. Juan Pérez"
+                      value={newClient.nombre}
+                      onChange={e => setNewClient({...newClient, nombre: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-2">Cédula / RIF *</label>
+                    <input 
+                      required
+                      type="text" 
+                      className="w-full bg-black/20 border border-white/10 rounded-2xl p-3 focus:outline-none focus:border-blue-500 transition-all font-bold text-white text-sm" 
+                      placeholder="V-12345678"
+                      value={newClient.cedula}
+                      onChange={e => setNewClient({...newClient, cedula: e.target.value})}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-2">Teléfono</label>
+                    <input 
+                      type="text" 
+                      className="w-full bg-black/20 border border-white/10 rounded-2xl p-3 focus:outline-none focus:border-blue-500 transition-all font-bold text-white text-sm" 
+                      placeholder="0414..."
+                      value={newClient.telefono || ''}
+                      onChange={e => setNewClient({...newClient, telefono: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-2">Correo Electrónico</label>
+                    <input 
+                      type="email" 
+                      className="w-full bg-black/20 border border-white/10 rounded-2xl p-3 focus:outline-none focus:border-blue-500 transition-all font-bold text-white text-sm" 
+                      placeholder="juan@email.com"
+                      value={newClient.email || ''}
+                      onChange={e => setNewClient({...newClient, email: e.target.value})}
+                    />
+                  </div>
+                </div>
+
+                <div className="p-4 bg-white/5 border border-white/10 rounded-2xl space-y-4">
+                  <h3 className="text-xs font-black text-white uppercase tracking-widest flex items-center gap-2">
+                    📍 Dirección de Delivery
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-2">Calle / Sector</label>
+                      <input 
+                        type="text" 
+                        className="w-full bg-black/40 border border-white/5 rounded-xl p-3 focus:outline-none focus:border-blue-500 transition-all font-bold text-white text-sm" 
+                        placeholder="Ej. Calle 5"
+                        value={newClient.calle || ''}
+                        onChange={e => setNewClient({...newClient, calle: e.target.value})}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-2">N° Casa / Apto</label>
+                      <input 
+                        type="text" 
+                        className="w-full bg-black/40 border border-white/5 rounded-xl p-3 focus:outline-none focus:border-blue-500 transition-all font-bold text-white text-sm" 
+                        placeholder="Ej. Casa 2B"
+                        value={newClient.casa || ''}
+                        onChange={e => setNewClient({...newClient, casa: e.target.value})}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-2">Referencia</label>
+                    <input 
+                      type="text" 
+                      className="w-full bg-black/40 border border-white/5 rounded-xl p-3 focus:outline-none focus:border-blue-500 transition-all font-bold text-white text-sm" 
+                      placeholder="Cerca de..."
+                      value={newClient.referencia || ''}
+                      onChange={e => setNewClient({...newClient, referencia: e.target.value})}
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSavingClient}
+                  className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white p-4 rounded-2xl font-black text-xs uppercase tracking-[3px] flex items-center justify-center gap-2 shadow-xl shadow-blue-500/20 active:scale-95 transition-all mt-4"
+                >
+                  {isSavingClient ? 'GUARDANDO...' : 'REGISTRAR CLIENTE'}
+                </button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* --- MODAL DE CUENTAS ABIERTAS --- */}
+      <AnimatePresence>
+        {showOpenTabsModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-[#111] border border-white/10 rounded-[2rem] w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]"
+            >
+              <div className="p-6 border-b border-white/5 flex justify-between items-center bg-yellow-500/10">
+                <div>
+                  <h2 className="text-xl font-black text-white flex items-center gap-2">
+                    🥂 CUENTAS ABIERTAS
+                  </h2>
+                  <p className="text-xs text-yellow-500 font-bold uppercase tracking-widest mt-1">
+                    Consumo VIP y Mesas
+                  </p>
+                </div>
+                <button 
+                  onClick={() => setShowOpenTabsModal(false)}
+                  className="p-2 hover:bg-white/5 rounded-xl transition-colors text-gray-400 hover:text-white"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="p-6 overflow-y-auto space-y-3">
+                {openTabs.length === 0 ? (
+                  <p className="text-center text-gray-500 py-10 font-bold">No hay cuentas abiertas en este momento.</p>
+                ) : (
+                  openTabs.map(tab => (
+                    <div key={tab.id} className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between hover:bg-white/10 transition-colors">
+                      <div>
+                        <h3 className="text-lg font-black text-white">{tab.identificador} {tab.cliente_nombre && <span className="text-gray-400">({tab.cliente_nombre})</span>}</h3>
+                        <p className="text-xs text-gray-400 font-bold">{tab.detalles?.length || 0} productos &bull; {new Date(tab.fecha_inicio).toLocaleTimeString()}</p>
+                        <p className="text-green-400 font-black mt-1">{formatCurrency(tab.total_usd)}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => {
+                            setCart(tab.detalles.map((d: any) => ({
+                              ...d, 
+                              id: d.producto_id, 
+                              quantity: d.cantidad,
+                              finalPrice: d.precio_unitario_usd
+                            })));
+                            setActiveOpenTabId(tab.id);
+                            if (tab.cliente_id) {
+                              const client = clients.find(c => c.id === tab.cliente_id);
+                              if (client) setSelectedClient(client);
+                            }
+                            setShowOpenTabsModal(false);
+                          }}
+                          className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-colors flex items-center gap-1"
+                        >
+                          ➕ Sumar Productos
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setCart(tab.detalles.map((d: any) => ({
+                              ...d, 
+                              id: d.producto_id, 
+                              quantity: d.cantidad,
+                              finalPrice: d.precio_unitario_usd
+                            })));
+                            setActiveOpenTabId(tab.id);
+                            if (tab.cliente_id) {
+                              const client = clients.find(c => c.id === tab.cliente_id);
+                              if (client) setSelectedClient(client);
+                            }
+                            setShowOpenTabsModal(false);
+                          }}
+                          className="bg-yellow-500 hover:bg-yellow-400 text-black px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-colors flex items-center gap-1"
+                        >
+                          💳 Cargar y Cobrar
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* --- MODAL DE PEDIDOS WEB PENDIENTES --- */}
       <AnimatePresence>
@@ -1448,6 +1794,148 @@ const POSScreen: React.FC = () => {
                     })
                   )
                 )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* --- MODAL DE COBRO A ANCHO COMPLETO --- */}
+      <AnimatePresence>
+        {showCheckoutModal && (
+          <div className="absolute inset-0 z-[120] flex items-center justify-center p-4 lg:p-8 bg-black/80 backdrop-blur-md rounded-[2.5rem]">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-6xl bg-[#1e293b] border-2 border-green-500/30 rounded-[2.5rem] p-6 lg:p-10 shadow-2xl shadow-green-500/20 flex flex-col gap-8"
+            >
+              {/* HEADER */}
+              <div className="flex justify-between items-start shrink-0">
+                <div>
+                  <h2 className="text-2xl lg:text-3xl font-black text-white uppercase tracking-wider flex items-center gap-4">
+                    <div className="w-12 h-12 lg:w-14 lg:h-14 bg-green-500/20 rounded-2xl flex items-center justify-center text-green-400">
+                      <CreditCard size={28} />
+                    </div>
+                    Procesar Cobro
+                  </h2>
+                  <p className="text-sm lg:text-base text-green-400/80 font-bold mt-2">Verifica los datos y finaliza la venta.</p>
+                </div>
+                <button 
+                  onClick={() => setShowCheckoutModal(false)}
+                  className="p-3 bg-white/5 hover:bg-white/10 rounded-2xl text-gray-400 transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              {/* CONTENIDO PRINCIPAL: 2 COLUMNAS */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* COLUMNA IZQUIERDA: RESUMEN Y VUELTO */}
+                <div className="flex flex-col gap-6">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-black/40 border border-white/5 p-6 rounded-3xl">
+                      <div className="text-xs text-gray-500 font-black uppercase tracking-widest mb-2">Monto Recibido</div>
+                      <div className="text-3xl lg:text-4xl font-black text-white">$ {totalPaidUSD.toFixed(2)}</div>
+                    </div>
+                    <div className="bg-black/40 border border-white/5 p-6 rounded-3xl">
+                      <div className="text-xs text-gray-500 font-black uppercase tracking-widest mb-2">Total Venta</div>
+                      <div className="text-3xl lg:text-4xl font-black text-white">$ {totalUSD.toFixed(2)}</div>
+                    </div>
+                  </div>
+
+                  {changeUSD > 0.01 && (
+                    <div className="bg-green-500/10 border border-green-500/20 p-6 rounded-3xl">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
+                        <div>
+                          <div className="text-xs text-green-500 font-black uppercase tracking-[4px] mb-2">Vuelto a Entregar</div>
+                          <div className="text-4xl lg:text-5xl font-black text-green-400 tracking-tighter leading-none">$ {changeUSD.toFixed(2)}</div>
+                          <div className="text-sm font-bold text-green-500/60 uppercase tracking-widest mt-2">Bs. {(changeUSD * tasaBCV).toFixed(2)}</div>
+                        </div>
+                        <div className="w-full sm:w-1/2">
+                          <label className="text-xs text-gray-500 font-black uppercase tracking-widest ml-2 block mb-2">Vuelto en USD ($)</label>
+                          <input 
+                            type="number"
+                            className="w-full bg-black/40 border border-white/10 rounded-2xl p-4 text-white font-black text-2xl focus:border-green-500/50 outline-none"
+                            placeholder="0.00"
+                            value={vueltoEntregadoUsd || ''}
+                            onChange={e => setVueltoEntregadoUsd(parseFloat(e.target.value) || 0)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* COLUMNA DERECHA: REFERENCIA Y EJECUCIÓN */}
+                <div className="flex flex-col gap-6 justify-between">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs text-gray-500 font-black uppercase ml-1 tracking-widest">Ref. Pago Móvil</label>
+                      <input 
+                        type="text" 
+                        className="w-full bg-black/40 border border-white/5 rounded-2xl p-4 text-center text-white font-black text-sm lg:text-base focus:border-blue-500/30 outline-none" 
+                        placeholder="Referencia..."
+                        value={paymentAmounts.referencia || ''} 
+                        onChange={e => setPaymentAmounts({...paymentAmounts, referencia: e.target.value})} 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs text-gray-500 font-black uppercase ml-1 tracking-widest">Aprobación Punto</label>
+                      <input 
+                        type="text" 
+                        className="w-full bg-black/40 border border-white/5 rounded-2xl p-4 text-center text-white font-black text-sm lg:text-base focus:border-orange-500/30 outline-none" 
+                        placeholder="Código..."
+                        value={paymentAmounts.aprobacion_punto || ''} 
+                        onChange={e => setPaymentAmounts({...paymentAmounts, aprobacion_punto: e.target.value})} 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between p-5 bg-black/20 rounded-2xl border border-white/5">
+                    <span className="text-xs font-black text-gray-500 uppercase tracking-widest">¿Venta a Crédito?</span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" checked={isFiado} onChange={e => setIsFiado(e.target.checked)} className="sr-only peer" />
+                      <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-400 after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500 peer-checked:after:bg-white"></div>
+                    </label>
+                  </div>
+
+                  <div className="space-y-4 mt-auto">
+                    {activeStore?.features?.hasOpenTabs !== false && (
+                      <button 
+                        onClick={() => { setShowCheckoutModal(false); handleSaveOpenTab(); }}
+                        disabled={isPaying}
+                        className="w-full bg-yellow-600 hover:bg-yellow-500 text-white p-4 lg:p-5 rounded-2xl font-black text-sm uppercase tracking-[3px] flex items-center justify-center gap-2 shadow-xl shadow-yellow-500/20 active:scale-95 transition-all"
+                      >
+                        📌 {selectedClient ? `GUARDAR A CUENTA DE ${selectedClient.nombre.split(' ')[0]}` : 'SELECCIONE CLIENTE PARA CUENTA'}
+                      </button>
+                    )}
+                    <div className="grid grid-cols-2 gap-4">
+                      <button 
+                        onClick={() => { setShowCheckoutModal(false); handleFinalize(); }}
+                        disabled={isPaying}
+                        className="bg-blue-600 hover:bg-blue-500 text-white p-5 lg:p-6 rounded-2xl font-black text-sm uppercase tracking-[3px] flex items-center justify-center gap-2 shadow-2xl shadow-blue-500/20 active:scale-95 transition-all"
+                      >
+                        <CheckCircle size={20} /> FACTURAR
+                      </button>
+                      <button 
+                        onClick={() => {
+                          if(!selectedClient) {
+                            addToast('error', 'Seleccione un cliente para fiar');
+                            return;
+                          }
+                          setIsFiado(true);
+                          setShowCheckoutModal(false);
+                          handleFinalize();
+                        }}
+                        disabled={isPaying}
+                        className="bg-red-500/10 hover:bg-red-500/20 text-red-400 p-5 lg:p-6 rounded-2xl font-black text-[10px] uppercase tracking-widest border border-red-500/20 active:scale-95 transition-all"
+                      >
+                        FALLÓ PAGO (FIADO)
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </motion.div>
           </div>

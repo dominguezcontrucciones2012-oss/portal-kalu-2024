@@ -16,8 +16,10 @@ import { cn, formatCurrency } from '../../lib/utils';
 import { type CuentaContable, type Asiento } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { subscribeToCollection, getLatestTasa } from '../../lib/dbUtils';
+import { useNavigate } from 'react-router-dom';
 
 const AccountingScreen: React.FC = () => {
+  const navigate = useNavigate();
   const [sales, setSales] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [movimientos, setMovimientos] = useState<any[]>([]);
@@ -309,13 +311,24 @@ const AccountingScreen: React.FC = () => {
     .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700 pb-20">
+    <div className="min-h-screen text-white p-4 md:p-6 pt-1 md:pt-1 transition-all duration-300 space-y-8 animate-in fade-in duration-700 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
-          <h1 className="text-3xl font-black text-white flex items-center gap-3">
-            <Calculator className="text-[#2ecc71]" /> CONTABILIDAD GENERAL
-          </h1>
-          <p className="text-gray-400 text-sm">Libro diario integrado con ventas, cobros y libreta de productores</p>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => navigate(-1)}
+            title="Volver atrás"
+            className="w-9 h-9 flex items-center justify-center bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-400 rounded-full transition-all border border-cyan-500/30 shrink-0"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <div>
+            <h1 className="text-2xl md:text-3xl font-black text-white flex items-center gap-3 uppercase">
+              <Calculator className="text-[#2ecc71]" /> CONTABILIDAD GENERAL
+            </h1>
+            <p className="text-gray-400 text-xs md:text-sm mt-1">Libro diario integrado con ventas, cobros y libreta de productores</p>
+          </div>
         </div>
         <div className="flex gap-3">
           <div className="relative">

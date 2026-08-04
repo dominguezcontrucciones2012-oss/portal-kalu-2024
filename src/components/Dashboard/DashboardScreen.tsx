@@ -27,10 +27,11 @@ import {
   ResponsiveContainer 
 } from 'recharts';
 import { cn, formatCurrency, parseDate } from '../../lib/utils';
-import { subscribeToCollection } from '../../lib/dbUtils';
+import { getAppConfig, subscribeToCollection, getActiveStoreId, updateDocument } from '../../lib/dbUtils';
+import { updateAppConfig } from '../../lib/dbUtils';
 import { type Product, type Sale } from '../../types';
 import QRCode from 'react-qr-code';
-import { doc, updateDoc, deleteDoc, getDocs, query, collection } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc, getDocs, query, collection, where } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 
 const DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
@@ -119,7 +120,7 @@ const DashboardScreen: React.FC = () => {
         setMensajesPortal(sorted);
       });
       unsubConfig = subscribeToCollection('configuracion', (data) => {
-        const globalConfig = data.find(c => c.id === 'global');
+        const globalConfig = data.find(c => c.id === getActiveStoreId()) || data.find(c => c.id === 'global');
         if (globalConfig && globalConfig.propaganda_url) {
           setPropagandaUrl(globalConfig.propaganda_url);
         }
@@ -145,7 +146,7 @@ const DashboardScreen: React.FC = () => {
       const backupData: any = {};
       
       for (const col of collectionsToBackup) {
-        const qCol = query(collection(db, col));
+        const qCol = query(collection(db, col), where('storeId', '==', getActiveStoreId()));
         const snap = await getDocs(qCol);
         backupData[col] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       }
@@ -171,19 +172,19 @@ const DashboardScreen: React.FC = () => {
   const handleResetData = async () => {
     if (!window.confirm("¿Seguro que quieres borrar TODA la contabilidad? (Ventas, cierres, saldos de clientes y productores)")) return;
     try {
-      // 1. Reset client balances
+      // 1. Reset client balances (only for the active store wallet)
       const qClients = query(collection(db, 'clients'));
       const snapClients = await getDocs(qClients);
-      snapClients.forEach(d => {
-        updateDoc(doc(db, 'clients', d.id), { saldo_usd: 0, puntos: 0 });
-      });
+      for (const d of snapClients.docs) {
+        await updateDocument('clients', d.id, { saldo_usd: 0, puntos: 0 });
+      }
 
-      // 2. Reset user balances (productores/repartidores)
+      // 2. Reset user balances (productores/repartidores) solo para esta tienda
       const qUsers = query(collection(db, 'users'));
       const snapUsers = await getDocs(qUsers);
-      snapUsers.forEach(d => {
-        updateDoc(doc(db, 'users', d.id), { saldo_pendiente_usd: 0 });
-      });
+      for (const d of snapUsers.docs) {
+        await updateDocument('users', d.id, { saldo_pendiente_usd: 0 });
+      }
 
       // 3. Reset collections
       const collectionsToDelete = [
@@ -201,7 +202,7 @@ const DashboardScreen: React.FC = () => {
       ];
 
       for (const col of collectionsToDelete) {
-         const qCol = query(collection(db, col));
+         const qCol = query(collection(db, col), where('storeId', '==', getActiveStoreId()));
          const snap = await getDocs(qCol);
          snap.forEach(d => deleteDoc(doc(db, col, d.id)));
       }

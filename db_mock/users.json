@@ -46,7 +46,7 @@
   },
   {
     "id": "c4",
-    "username": "Juan Carlos Domínguez ",
+    "username": "Juan Carlos Dom\u00ednguez ",
     "role": "cliente",
     "pin": "2345",
     "cedula": "15082352",
@@ -59,5 +59,23 @@
     "pin": "3456",
     "cedula": "11120033",
     "clientId": "c5"
+  },
+  {
+    "id": "client_v15123456",
+    "username": "V-15123456",
+    "cedula": "V-15123456",
+    "correo": "test1@kalu.com",
+    "pin": "112233",
+    "role": "cliente",
+    "clientId": "client_v15123456"
+  },
+  {
+    "id": "client_v20987654",
+    "username": "V-20987654",
+    "cedula": "V-20987654",
+    "correo": "test2@kalu.com",
+    "pin": "445566",
+    "role": "cliente",
+    "clientId": "client_v20987654"
   }
 ]

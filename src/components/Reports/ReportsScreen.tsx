@@ -22,10 +22,12 @@ import {
 } from 'recharts';
 import { formatCurrency } from '../../lib/utils';
 import { subscribeToCollection } from '../../lib/dbUtils';
+import { useNavigate } from 'react-router-dom';
 
 const COLORS = ['#3498db', '#f1c40f', '#e74c3c', '#9b59b6', '#2ecc71', '#e67e22'];
 
 const ReportsScreen: React.FC = () => {
+  const navigate = useNavigate();
   const [sales, setSales] = useState<any[]>([]);
   const [compras, setCompras] = useState<any[]>([]);
   const [gastos, setGastos] = useState<any[]>([]);
@@ -139,13 +141,24 @@ const ReportsScreen: React.FC = () => {
   }, [sales, compras, gastos, movimientos, filter]);
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
+    <div className="min-h-screen text-white p-4 md:p-6 pt-1 md:pt-1 transition-all duration-300 space-y-8 animate-in fade-in duration-700">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
-          <h1 className="text-3xl font-black text-white flex items-center gap-3">
-            <BarChart2 className="text-[#3498db]" /> ANÁLISIS DE UTILIDAD
-          </h1>
-          <p className="text-gray-400 text-sm">Visualización avanzada de márgenes y rendimiento en tiempo real</p>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => navigate(-1)}
+            title="Volver atrás"
+            className="w-9 h-9 flex items-center justify-center bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-400 rounded-full transition-all border border-cyan-500/30 shrink-0"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <div>
+            <h1 className="text-2xl md:text-3xl font-black text-white flex items-center gap-3 uppercase">
+              <BarChart2 className="text-[#3498db]" /> ANÁLISIS DE UTILIDAD
+            </h1>
+            <p className="text-gray-400 text-xs md:text-sm mt-1">Visualización avanzada de márgenes y rendimiento en tiempo real</p>
+          </div>
         </div>
         <div className="flex gap-3">
           <select 

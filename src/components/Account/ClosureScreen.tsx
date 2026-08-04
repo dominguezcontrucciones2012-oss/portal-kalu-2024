@@ -13,8 +13,10 @@ import {
   Calendar,
   Edit2,
   X,
-  Check
+  Check,
+  ArrowLeft
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { formatCurrency, cn } from '../../lib/utils';
 import { motion } from 'motion/react';
 import { getTodaySales, getLatestTasa, saveClosure, getClosures, updateDocument } from '../../lib/dbUtils';
@@ -22,6 +24,7 @@ import { type Sale, type CierreCaja } from '../../types';
 import { useToast } from '../../contexts/ToastProvider';
 
 const ClosureScreen: React.FC = () => {
+  const navigate = useNavigate();
   const { addToast } = useToast();
   const [isClosed, setIsClosed] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -65,7 +68,8 @@ const ClosureScreen: React.FC = () => {
 
   const totals = sales.reduce((acc, sale) => {
     acc.usd_cash += sale.pago_efectivo_usd || 0;
-    acc.vueltos += sale.vuelto_entregado_usd || 0;
+    acc.vueltos += sale.vuelto_usd !== undefined ? sale.vuelto_usd : (sale.vuelto_entregado_usd || 0);
+    acc.vueltos_bs += sale.vuelto_bs || 0;
     acc.bs_cash += sale.pago_efectivo_bs || 0;
     acc.pago_movil += sale.pago_movil_bs || 0;
     acc.biopago += sale.biopago_bdv || 0;
@@ -76,11 +80,11 @@ const ClosureScreen: React.FC = () => {
     // pero NO son fiados — se liquidan al aprobar en WhatsApp.
     acc.fiado += sale.es_fiado ? (sale.saldo_pendiente_usd || 0) : 0;
     return acc;
-  }, { usd_cash: 0, vueltos: 0, bs_cash: 0, pago_movil: 0, biopago: 0, debito: 0, total_usd: 0, fiado: 0 });
+  }, { usd_cash: 0, vueltos: 0, vueltos_bs: 0, bs_cash: 0, pago_movil: 0, biopago: 0, debito: 0, total_usd: 0, fiado: 0 });
 
   // El efectivo esperado es: Lo que entró - Lo que salió como vuelto
   const expectedUSDCash = totals.usd_cash - totals.vueltos;
-  const expectedBsCash = totals.bs_cash;
+  const expectedBsCash = totals.bs_cash - totals.vueltos_bs;
   
   const differenceUSD = (physicalData.monto_real_usd || 0) - expectedUSDCash;
   const differenceBS = (physicalData.monto_real_bs || 0) - expectedBsCash;
@@ -155,15 +159,23 @@ const ClosureScreen: React.FC = () => {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-700 pb-20">
+    <div className="w-full space-y-6 animate-in fade-in duration-700 pb-20 pt-4 mt-0">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
-          <h1 className="text-3xl font-black text-white flex items-center gap-3">
-            <Lock className="text-[#e74c3c]" /> CIERRE DE CAJA DIARIO
-          </h1>
-          <p className="text-gray-400 text-sm">Conciliación de saldos y declaración de efectivo físico</p>
+        <div className="flex items-center gap-4 shrink-0">
+          <button 
+            onClick={() => navigate(-1)}
+            className="p-3 bg-white/5 hover:bg-white/10 rounded-2xl transition-all text-gray-400 hover:text-white shrink-0"
+          >
+            <ArrowLeft size={24} />
+          </button>
+          <div>
+            <h1 className="text-xl lg:text-2xl xl:text-3xl font-black text-white flex items-center gap-3 uppercase">
+              <Lock className="text-[#e74c3c]" size={28} /> CIERRE DE CAJA DIARIO
+            </h1>
+            <p className="text-gray-400 text-sm mt-1 font-bold">Conciliación de saldos y declaración de efectivo físico</p>
+          </div>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 shrink-0">
           <button onClick={fetchData} className="p-3 bg-white/5 hover:bg-white/10 rounded-2xl transition-all">
             <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
           </button>
@@ -179,9 +191,9 @@ const ClosureScreen: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
         {/* Expected Balances (System) */}
-        <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-8 h-fit animate-in fade-in duration-500">
+        <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-6 lg:p-8 h-fit animate-in fade-in duration-500">
           <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
             <FileText className="text-blue-400" size={20} /> Saldo en Sistema
           </h3>
@@ -194,7 +206,7 @@ const ClosureScreen: React.FC = () => {
                <span className="text-xl font-black text-green-400">{formatCurrency(expectedUSDCash)}</span>
              </div>
              
-             <div className="grid grid-cols-2 gap-3">
+             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                <div className="p-3 bg-black/20 rounded-2xl border border-white/5">
                  <span className="text-[9px] font-black text-gray-500 uppercase block mb-1">Efectivo Bs</span>
                  <span className="text-sm font-bold text-white">{formatCurrency(expectedBsCash, 'Bs')}</span>
@@ -213,10 +225,16 @@ const ClosureScreen: React.FC = () => {
                </div>
              </div>
 
-             <div className="p-4 bg-red-500/10 rounded-2xl border border-red-500/20 flex justify-between items-center">
-               <span className="text-[10px] font-black text-red-400 uppercase tracking-widest">Total Vueltos Dados</span>
-               <span className="text-lg font-black text-red-400">-{formatCurrency(totals.vueltos)}</span>
+             <div className="flex items-center justify-between p-3 bg-red-500/10 rounded-xl border border-red-500/20">
+               <span className="text-[10px] font-black text-red-400 uppercase tracking-widest">Total Vueltos Dados (USD)</span>
+               <span className="text-lg font-black text-red-400">-${formatCurrency(totals.vueltos)}</span>
              </div>
+             {totals.vueltos_bs > 0 && (
+               <div className="flex items-center justify-between p-3 bg-red-500/10 rounded-xl border border-red-500/20">
+                 <span className="text-[10px] font-black text-red-400 uppercase tracking-widest">Total Vueltos Dados (Bs)</span>
+                 <span className="text-lg font-black text-red-400">-Bs. {totals.vueltos_bs.toLocaleString('es-VE', { minimumFractionDigits: 2 })}</span>
+               </div>
+             )}
 
              <div className="flex justify-between items-center p-4 bg-[#3498db]/10 rounded-2xl border border-[#3498db]/20">
                <span className="text-sm font-black text-blue-400 uppercase tracking-widest">Ventas Totales USD</span>
@@ -226,48 +244,52 @@ const ClosureScreen: React.FC = () => {
         </div>
 
         {/* Declaration (Manual) */}
-        <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-8 space-y-6 animate-in fade-in duration-500">
-          <h3 className="text-lg font-bold flex items-center gap-2">
-            <AlertTriangle className="text-yellow-500" size={20} /> Declaración Física
-          </h3>
-          
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase text-gray-500 tracking-widest px-2">Efectivo Dólares Contado</label>
-              <input 
-                type="number" 
-                placeholder="0.00" 
-                className="w-full bg-black/30 border border-white/10 rounded-2xl py-4 px-6 text-xl font-black focus:border-[#e74c3c] outline-none transition-all placeholder:text-gray-800"
-                value={physicalData.monto_real_usd || ''}
-                onChange={(e) => setPhysicalData({...physicalData, monto_real_usd: parseFloat(e.target.value) || 0})}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase text-gray-500 tracking-widest px-2">Efectivo Bolívares Contado</label>
-              <input 
-                type="number" 
-                placeholder="0.00" 
-                className="w-full bg-black/30 border border-white/10 rounded-2xl py-4 px-6 text-xl font-black focus:border-[#e74c3c] outline-none transition-all placeholder:text-gray-800"
-                value={physicalData.monto_real_bs || ''}
-                onChange={(e) => setPhysicalData({...physicalData, monto_real_bs: parseFloat(e.target.value) || 0})}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase text-gray-500 tracking-widest px-2">Observaciones / Diferencias</label>
-              <textarea 
-                placeholder="Ej: Billete de 5$ dañado..." 
-                rows={3} 
-                className="w-full bg-black/30 border border-white/10 rounded-2xl py-4 px-6 text-sm font-bold focus:border-[#3498db] outline-none transition-all"
-                value={physicalData.observaciones}
-                onChange={(e) => setPhysicalData({...physicalData, observaciones: e.target.value})}
-              />
+        <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-6 lg:p-8 flex flex-col justify-between animate-in fade-in duration-500">
+          <div>
+            <h3 className="text-lg font-bold flex items-center gap-2 mb-6">
+              <AlertTriangle className="text-yellow-500" size={20} /> Declaración Física
+            </h3>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase text-gray-500 tracking-widest px-2">Efectivo Dólares Contado</label>
+                  <input 
+                    type="number" 
+                    placeholder="0.00" 
+                    className="w-full bg-black/30 border border-white/10 rounded-2xl py-4 px-6 text-xl font-black focus:border-[#e74c3c] outline-none transition-all placeholder:text-gray-800"
+                    value={physicalData.monto_real_usd || ''}
+                    onChange={(e) => setPhysicalData({...physicalData, monto_real_usd: parseFloat(e.target.value) || 0})}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase text-gray-500 tracking-widest px-2">Efectivo Bolívares Contado</label>
+                  <input 
+                    type="number" 
+                    placeholder="0.00" 
+                    className="w-full bg-black/30 border border-white/10 rounded-2xl py-4 px-6 text-xl font-black focus:border-[#e74c3c] outline-none transition-all placeholder:text-gray-800"
+                    value={physicalData.monto_real_bs || ''}
+                    onChange={(e) => setPhysicalData({...physicalData, monto_real_bs: parseFloat(e.target.value) || 0})}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2 pt-2">
+                <label className="text-[10px] font-black uppercase text-gray-500 tracking-widest px-2">Observaciones / Diferencias</label>
+                <textarea 
+                  placeholder="Ej: Billete de 5$ dañado..." 
+                  rows={2} 
+                  className="w-full bg-black/30 border border-white/10 rounded-2xl py-3 px-6 text-sm font-bold focus:border-[#3498db] outline-none transition-all resize-none"
+                  value={physicalData.observaciones}
+                  onChange={(e) => setPhysicalData({...physicalData, observaciones: e.target.value})}
+                />
+              </div>
             </div>
           </div>
 
           <button 
             onClick={handleFinalize}
             disabled={isClosed || loading}
-            className="w-full py-5 bg-[#e74c3c] hover:bg-[#c0392b] text-white font-black uppercase tracking-[4px] rounded-2xl shadow-xl shadow-red-500/10 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full mt-6 py-5 bg-[#e74c3c] hover:bg-[#c0392b] text-white font-black uppercase tracking-[4px] rounded-2xl shadow-xl shadow-red-500/10 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? 'Procesando...' : 'Finalizar y Cerrar Caja'}
           </button>

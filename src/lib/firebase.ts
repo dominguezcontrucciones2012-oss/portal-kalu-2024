@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, onAuthStateChanged, signInWithPopup } from 'firebase/auth';
+import { getAuth, onAuthStateChanged, signInWithPopup, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore, doc, getDocFromCache, getDocFromServer, collection, query, where, getDocs, initializeFirestore, persistentLocalCache, persistentSingleTabManager } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -35,6 +35,7 @@ try {
       }
     }
     auth = getAuth(app);
+    setPersistence(auth, browserLocalPersistence).catch(console.error);
     storage = getStorage(app);
     isMock = false;
   } else {
@@ -169,20 +170,41 @@ export const signInWithPinCustom = async (cedulaOrPin: string, pin?: string) => 
     const querySnapshot = await getDocs(q);
     
     // Filtrar localmente por cédula para mayor seguridad o soportar 'username' = cedula (como se guarda a veces)
+    const normalizeCedula = (val: any) => {
+      if (!val) return '';
+      return String(val).replace(/[-\s]/g, '').toUpperCase();
+    };
+
+    const normActualCedula = normalizeCedula(actualCedula);
+    const numActualCedula = String(actualCedula || '').replace(/\D/g, '');
+
+    console.log(`[AUTH] Intento de login - Input: Cédula/Correo="${actualCedula}" PIN="${actualPin}"`);
+    console.log(`[AUTH] Cédula normalizada: "${normActualCedula}" (Solo números: "${numActualCedula}")`);
+    console.log(`[AUTH] Documentos encontrados con ese PIN: ${querySnapshot.docs.length}`);
+
     const matchedDocs = querySnapshot.docs.filter(doc => {
       const data = doc.data();
       if (actualCedula) {
-        const cleanStoredCedula = String(data.cedula || '').replace(/\D/g, '');
-        const cleanStoredUsername = String(data.username || '').replace(/\D/g, '');
-        const cleanActualCedula = String(actualCedula).replace(/\D/g, '');
+        const normStoredCedula = normalizeCedula(data.cedula);
+        const normStoredUsername = normalizeCedula(data.username);
+        const numStoredCedula = String(data.cedula || '').replace(/\D/g, '');
+        const numStoredUsername = String(data.username || '').replace(/\D/g, '');
         
-        return (cleanStoredCedula === cleanActualCedula) || 
-               (cleanStoredUsername === cleanActualCedula) ||
+        const isMatch = (normStoredCedula === normActualCedula) || 
+               (normStoredUsername === normActualCedula) ||
+               (numStoredCedula !== '' && numStoredCedula === numActualCedula) ||
+               (numStoredUsername !== '' && numStoredUsername === numActualCedula) ||
                (data.cedula === actualCedula) || 
-               (data.username === actualCedula);
+               (data.username === actualCedula) ||
+               (data.correo === actualCedula); // Soporte para login con correo
+
+        console.log(`[AUTH] Comparando contra usuario DB: ${data.username || 'Sin Nombre'} (Cédula: ${data.cedula}) -> Coincide: ${isMatch}`);
+        return isMatch;
       }
       return true;
     });
+
+    console.log(`[AUTH] Documentos que coinciden con Cédula/Correo: ${matchedDocs.length}`);
 
     if (matchedDocs.length > 0) {
       let userDoc = matchedDocs[0];
@@ -205,7 +227,7 @@ export const signInWithPinCustom = async (cedulaOrPin: string, pin?: string) => 
         username: profile.username || 'Usuario',
         role: profile.role || 'cliente',
         email: profile.email || undefined,
-        pin: profile.pin,
+        // PIN nunca se expone al cliente — se valida solo en Firestore
         cedula: profile.cedula,
         clientId: profile.clientId
       };

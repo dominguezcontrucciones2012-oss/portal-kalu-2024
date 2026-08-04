@@ -9,8 +9,14 @@ import {
   Globe, 
   FileText,
   ShieldCheck,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Users,
+  Trash2,
+  UserPlus,
+  X,
+  ArrowLeft
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import { getAppConfig, updateAppConfig } from '../../lib/dbUtils';
 import { type Configuration } from '../../types';
@@ -19,55 +25,162 @@ import { useAuth } from '../../contexts/AuthProvider';
 
 const SettingsScreen: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [config, setConfig] = useState<Configuration>({
-    id: 'global',
-    empresa_nombre: 'KALUNEVA 2024',
-    empresa_rif: 'J-12345678-9',
-    empresa_telefono: '+58 412-1234567',
-    empresa_direccion: 'Sector Las Lomas, Edo. Trujillo',
-    mensaje_recibo: '¡Gracias por su compra! Vuelva pronto.',
+    id: '',
+    empresa_nombre: 'Mi Tienda',
+    empresa_rif: 'J-00000000-0',
+    empresa_telefono: '',
+    empresa_direccion: '',
+    mensaje_recibo: '¡Gracias por su compra!',
     moneda_principal: 'USD',
     estado_portal: 'automatico'
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [storeId, setStoreId] = useState('');
+
+  const [cashiers, setCashiers] = useState<any[]>([]);
+  const [newCashier, setNewCashier] = useState({
+    nombre: '',
+    cedula: '',
+    pin: '',
+    role: 'cajero'
+  });
+  const [isSavingCashier, setIsSavingCashier] = useState(false);
+  const [isAddCashierModalOpen, setIsAddCashierModalOpen] = useState(false);
 
   useEffect(() => {
-    const fetchConfig = async () => {
-      const data = await getAppConfig();
-      if (data) setConfig(data as Configuration);
+    let unsubscribeCashiers: any = null;
+
+    const fetchConfigAndCashiers = async () => {
+      const { getActiveStoreId } = await import('../../lib/dbUtils');
+      const currentStoreId = getActiveStoreId();
+      setStoreId(currentStoreId);
+      
+      const { getDoc, doc, collection, query, where, onSnapshot } = await import('firebase/firestore');
+      const { db } = await import('../../lib/firebase');
+      
+      const configRef = doc(db, 'configuracion', currentStoreId);
+      const snap = await getDoc(configRef);
+      
+      if (snap.exists()) {
+        setConfig({ id: snap.id, ...snap.data() } as Configuration);
+      } else {
+        const globalRef = doc(db, 'configuracion', 'global');
+        const globalSnap = await getDoc(globalRef);
+        if (globalSnap.exists()) {
+          setConfig({ ...globalSnap.data(), id: currentStoreId } as Configuration);
+        }
+      }
       setLoading(false);
+
+      const q = query(collection(db, 'administradores'), where('storeId', '==', currentStoreId));
+      unsubscribeCashiers = onSnapshot(q, (snapshot) => {
+        const list = snapshot.docs.map(d => ({
+          id: d.id,
+          ...d.data()
+        }));
+        setCashiers(list);
+      });
     };
-    fetchConfig();
+    
+    fetchConfigAndCashiers();
+
+    return () => {
+      if (unsubscribeCashiers) unsubscribeCashiers();
+    };
   }, []);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
-      await updateAppConfig(config);
-      alert("Configuración guardada exitosamente.");
-    } catch (err) {
+      const { setDoc, doc, serverTimestamp } = await import('firebase/firestore');
+      const { db } = await import('../../lib/firebase');
+      const { id, ...configData } = config;
+      
+      await setDoc(doc(db, 'configuracion', storeId), {
+        ...configData,
+        updatedAt: serverTimestamp()
+      });
+      alert(`Configuración guardada exitosamente para la tienda: ${storeId}`);
+    } catch (err: any) {
       console.error(err);
-      alert("Error al guardar.");
+      alert("Error al guardar: " + err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveCashier = async () => {
+    if (!newCashier.nombre || !newCashier.cedula || !newCashier.pin) {
+      alert("Por favor completa nombre, cédula y PIN.");
+      return;
+    }
+    setIsSavingCashier(true);
+    try {
+      const { setDoc, doc } = await import('firebase/firestore');
+      const { db } = await import('../../lib/firebase');
+      
+      const pseudoEmail = `${newCashier.cedula}@kalu.app`;
+      const adminRef = doc(db, 'administradores', pseudoEmail);
+      
+      await setDoc(adminRef, {
+        nombre: newCashier.nombre,
+        cedula: newCashier.cedula,
+        email: pseudoEmail,
+        pin: newCashier.pin,
+        role: newCashier.role,
+        storeId: storeId,
+        fechaCreacion: new Date().toISOString()
+      }, { merge: true });
+
+      alert("Personal registrado exitosamente.");
+      setNewCashier({ nombre: '', cedula: '', pin: '', role: 'cajero' });
+      setIsAddCashierModalOpen(false);
+    } catch (err: any) {
+      console.error(err);
+      alert("Error al registrar: " + err.message);
+    } finally {
+      setIsSavingCashier(false);
+    }
+  };
+
+  const handleDeleteCashier = async (cashier: any) => {
+    if (!window.confirm(`¿Estás seguro de que deseas ELIMINAR/DESPEDIR a ${cashier.nombre}?`)) return;
+    try {
+      const { deleteDoc, doc } = await import('firebase/firestore');
+      const { db } = await import('../../lib/firebase');
+      await deleteDoc(doc(db, 'administradores', cashier.id));
+      alert("Personal eliminado.");
+    } catch (err: any) {
+      console.error(err);
+      alert("Error al eliminar: " + err.message);
     }
   };
 
   if (loading) return null;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20">
-      <div>
-        <h1 className="text-3xl font-black text-white flex items-center gap-3">
-          <Settings className="text-[#3498db]" /> CONFIGURACIÓN GLOBAL
-        </h1>
-        <p className="text-gray-400 text-sm">Gestiona la información legal y visual de tu empresa según el modelo oficial</p>
+    <div className="w-full space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20 -mt-2">
+      <div className="flex items-center gap-4">
+        <button 
+          onClick={() => navigate(-1)}
+          className="p-3 bg-white/5 hover:bg-white/10 rounded-2xl transition-all text-gray-400 hover:text-white"
+        >
+          <ArrowLeft size={24} />
+        </button>
+        <div>
+          <h1 className="text-3xl font-black text-white flex items-center gap-3">
+            <Settings className="text-[#3498db]" /> CONFIGURACIÓN GLOBAL
+          </h1>
+          <p className="text-gray-400 text-sm mt-1">Gestiona la información legal y visual de tu empresa según el modelo oficial</p>
+        </div>
       </div>
 
-      <form onSubmit={handleSave} className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <form onSubmit={handleSave} className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Información General */}
           <div className="bg-white/5 border border-white/10 p-8 rounded-[2.5rem] space-y-6">
             <h3 className="text-lg font-bold flex items-center gap-2 mb-2">
@@ -218,20 +331,164 @@ const SettingsScreen: React.FC = () => {
             </div>
          </div>
 
-         {/* Integraciones */}
-         <div className="bg-white/5 border border-white/10 p-8 rounded-[2.5rem] space-y-4">
-            <h3 className="text-lg font-bold flex items-center gap-2">
-              <Globe className="text-pink-400" size={20} /> Integración n8n (Chatbot y CRM)
-            </h3>
-            <p className="text-sm text-gray-500 font-medium">URL del Webhook de n8n para notificar automáticamente al repartidor cuando llega un pedido.</p>
-            <div className="space-y-1 mt-4">
-              <input 
-                type="url" 
-                value={config.n8n_webhook_url || ''}
-                onChange={(e) => setConfig({...config, n8n_webhook_url: e.target.value})}
-                placeholder="https://n8n.tu-dominio.com/webhook/kalu-ventas"
-                className="w-full bg-black/30 border border-white/10 rounded-2xl py-4 px-6 text-sm font-bold focus:border-[#3498db] outline-none transition-all"
-              />
+         {/* Gestión de Cajeros */}
+         <div className="bg-white/5 border border-white/10 p-8 rounded-[2.5rem] space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-bold flex items-center gap-2">
+                  <Users className="text-[#3498db]" size={20} /> Gestión de Personal y Cajeros
+                </h3>
+                <p className="text-sm text-gray-500 font-medium mt-1">Administra el personal que tiene acceso al POS en esta sucursal.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddCashierModalOpen(true)}
+                className="bg-[#3498db] hover:bg-[#2980b9] text-white font-black py-3 px-6 rounded-xl shadow-lg shadow-[#3498db]/20 transition-all text-xs uppercase tracking-[2px] flex items-center gap-2 whitespace-nowrap"
+              >
+                <UserPlus size={16} /> AGREGAR NUEVO CAJERO
+              </button>
+            </div>
+            
+            {/* Formulario Nuevo Cajero (Modal) */}
+            {isAddCashierModalOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="bg-[#1e293b] border border-white/10 rounded-3xl p-8 max-w-2xl w-full shadow-2xl relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddCashierModalOpen(false)}
+                    className="absolute top-6 right-6 text-gray-500 hover:text-white transition-colors"
+                  >
+                    <X size={24} />
+                  </button>
+                  
+                  <h4 className="text-lg font-black text-white uppercase tracking-widest mb-6 flex items-center gap-2">
+                    <UserPlus className="text-[#3498db]" size={20} /> Registrar Nuevo Personal
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-2">Nombre Completo</label>
+                      <input 
+                        type="text" 
+                        value={newCashier.nombre}
+                        onChange={(e) => setNewCashier({...newCashier, nombre: e.target.value})}
+                        placeholder="Ej. Ana Pérez"
+                        className="w-full bg-black/30 border border-white/10 rounded-xl py-3 px-4 text-sm font-bold focus:border-[#3498db] outline-none transition-all"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-2">Cédula / DNI</label>
+                      <input 
+                        type="text" 
+                        value={newCashier.cedula}
+                        onChange={(e) => setNewCashier({...newCashier, cedula: e.target.value})}
+                        placeholder="Ej. 12345678"
+                        className="w-full bg-black/30 border border-white/10 rounded-xl py-3 px-4 text-sm font-bold focus:border-[#3498db] outline-none transition-all"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-2">PIN de Acceso</label>
+                      <input 
+                        type="password" 
+                        value={newCashier.pin}
+                        onChange={(e) => setNewCashier({...newCashier, pin: e.target.value})}
+                        placeholder="****"
+                        maxLength={6}
+                        className="w-full bg-black/30 border border-white/10 rounded-xl py-3 px-4 text-sm font-bold focus:border-[#3498db] outline-none transition-all tracking-[0.5em]"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-2">Rol Asignado</label>
+                      <select
+                        value={newCashier.role}
+                        onChange={(e) => setNewCashier({...newCashier, role: e.target.value})}
+                        className="w-full bg-black/30 border border-white/10 rounded-xl py-3 px-4 text-sm font-bold focus:border-[#3498db] outline-none transition-all text-white appearance-none"
+                      >
+                        <option value="cajero">Cajero</option>
+                        <option value="supervisor">Supervisor</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-2">Sucursal Asignada</label>
+                      <input 
+                        type="text" 
+                        value={storeId || 'Sucursal Principal'}
+                        disabled
+                        className="w-full bg-white/5 border border-white/5 rounded-xl py-3 px-4 text-sm font-bold text-gray-500 cursor-not-allowed"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end pt-6 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsAddCashierModalOpen(false)}
+                      className="bg-transparent hover:bg-white/5 text-gray-400 font-bold py-3 px-6 rounded-xl transition-all text-xs uppercase tracking-[2px]"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveCashier}
+                      disabled={isSavingCashier}
+                      className="bg-[#3498db] hover:bg-[#2980b9] text-white font-black py-3 px-6 rounded-xl shadow-lg shadow-[#3498db]/20 transition-all text-xs uppercase tracking-[2px] disabled:opacity-50"
+                    >
+                      {isSavingCashier ? 'GUARDANDO...' : 'GUARDAR CAJERO'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tabla de Personal */}
+            <div className="mt-8 bg-black/20 rounded-2xl overflow-hidden border border-white/5">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-white/5 border-b border-white/10">
+                    <th className="p-4 text-xs font-black text-gray-500 uppercase tracking-widest w-1/3">Nombre</th>
+                    <th className="p-4 text-xs font-black text-gray-500 uppercase tracking-widest w-1/4">Cédula</th>
+                    <th className="p-4 text-xs font-black text-gray-500 uppercase tracking-widest w-1/4">Rol</th>
+                    <th className="p-4 text-xs font-black text-gray-500 uppercase tracking-widest text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {cashiers.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="p-8 text-center text-gray-500 text-sm">
+                        No hay personal registrado en esta sucursal.
+                      </td>
+                    </tr>
+                  ) : (
+                    cashiers.map(c => (
+                      <tr key={c.id} className="hover:bg-white/5 transition-colors">
+                        <td className="p-4 text-sm font-bold text-white flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-[#3498db]/20 flex items-center justify-center text-[#3498db]">
+                            {c.nombre?.charAt(0).toUpperCase()}
+                          </div>
+                          {c.nombre}
+                        </td>
+                        <td className="p-4 text-sm text-gray-300 font-mono">{c.cedula || 'N/A'}</td>
+                        <td className="p-4 text-sm">
+                          <span className={cn(
+                            "px-3 py-1 rounded-full text-[10px] font-black tracking-widest uppercase",
+                            c.role === 'supervisor' ? "bg-purple-500/20 text-purple-400" : "bg-blue-500/20 text-blue-400"
+                          )}>
+                            {c.role}
+                          </span>
+                        </td>
+                        <td className="p-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCashier(c)}
+                            className="p-2 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-lg transition-all"
+                            title="Despedir / Eliminar"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
          </div>
 

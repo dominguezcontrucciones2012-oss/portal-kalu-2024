@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sistema de Administrador KALU2024</title>
+    <title>KALU - Quesos y Embutidos</title>
     <meta name="description" content="Gestión profesional de inventario, ventas y clientes." />
     <meta name="google" content="notranslate" />
     <link rel="icon" type="image/svg+xml" href="https://api.dicebear.com/7.x/initials/svg?seed=KN" />
@@ -17,12 +17,12 @@
     <!-- Open Graph for WhatsApp & Social Previews -->
     <meta property="og:title" content="KALU - Quesos y Embutidos" />
     <meta property="og:description" content="Catálogo, Pedidos y Portal Oficial de Kalu." />
-    <meta property="og:image" content="https://kalu-queso-sanjuam.web.app/logo.png" />
+    <meta property="og:image" content="https://kalu-queso-sanjuam.web.app/298495.png" />
     <meta property="og:url" content="https://kalu-queso-sanjuam.web.app" />
     <meta property="og:type" content="website" />
 
     <!-- Precargar el logo para que esté listo al instante -->
-    <link rel="preload" href="/logo.png" as="image" />
+    <link rel="preload" href="/298495.png" as="image" />
   </head>
   <body>
     <div id="root"></div>
@@ -36,7 +36,7 @@
       // ── Registro del Service Worker con auto-actualización agresiva ──
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js?v=9').then(reg => {
+          navigator.serviceWorker.register('/sw.js?v=13').then(reg => {
 
             // Verificar actualizaciones cada 30 segundos
             setInterval(() => reg.update(), 30000);

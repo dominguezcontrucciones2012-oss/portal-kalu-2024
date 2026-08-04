@@ -15,8 +15,10 @@ import {
 import { cn, formatCurrency } from '../../lib/utils';
 import { subscribeToCollection, getLatestTasa, createSale, updateDocument, addDocument } from '../../lib/dbUtils';
 import { type Client } from '../../types';
+import { useNavigate } from 'react-router-dom';
 
 const MorososScreen: React.FC = () => {
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
   const [tasaBcv, setTasaBcv] = useState(40.50);
@@ -131,14 +133,34 @@ const MorososScreen: React.FC = () => {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
-          <h1 className="text-3xl font-black text-white flex items-center gap-3">
-            <Users className="text-[#e74c3c]" /> CUENTAS POR COBRAR
-          </h1>
-          <p className="text-gray-400 text-sm">Control estricto de mercancía fiada y abonos</p>
+    <div className="min-h-screen text-white p-4 md:p-6 pt-1 md:pt-1 transition-all duration-300">
+      
+      {/* 1. CABECERA PEGADA ARRIBA CON BOTÓN REGRESAR */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-3">
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => navigate(-1)}
+            title="Volver atrás"
+            className="w-9 h-9 flex items-center justify-center bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-400 rounded-full transition-all border border-cyan-500/30 shrink-0"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="bg-red-500/20 text-red-400 p-1 rounded-lg text-lg">💳</span>
+              <h1 className="text-2xl md:text-3xl font-black tracking-wide uppercase leading-none">
+                CUENTAS POR COBRAR
+              </h1>
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Control estricto de mercancía fiada y abonos
+            </p>
+          </div>
         </div>
+
         <div className="flex items-center gap-4">
           {search === 'RESET' && (
             <button 
@@ -156,79 +178,70 @@ const MorososScreen: React.FC = () => {
               LIMPIAR BUG DE DEUDA
             </button>
           )}
-          <div className="bg-red-500/10 border border-red-500/20 px-6 py-3 rounded-2xl">
+          <div className="bg-red-500/10 border border-red-500/20 px-6 py-2 rounded-2xl self-start md:self-auto text-right">
             <div className="text-[10px] font-black text-red-400 uppercase tracking-widest leading-none mb-1">Deuda Total en la Calle</div>
-            <div className="text-2xl font-black text-red-500">{formatCurrency(totalDeuda)}</div>
+            <div className="text-xl font-black text-red-500">{formatCurrency(totalDeuda)}</div>
           </div>
         </div>
       </div>
 
-      <div className="bg-white/5 border border-white/10 p-2 rounded-3xl">
-        <div className="relative">
-          <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-500" size={20} />
-          <input 
-            type="text" 
-            placeholder="Buscar por cliente moroso..."
-            className="w-full bg-transparent py-5 pl-16 pr-6 focus:outline-none text-lg font-bold"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
+      {/* BLOQUE DE BÚSQUEDA */}
+      <div className="bg-[#112d59]/80 backdrop-blur-md p-3 rounded-2xl border border-slate-700/50 shadow-md mb-4 flex items-center gap-2">
+        <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input 
+          type="text" 
+          placeholder="Buscar por cliente moroso, cédula o teléfono..." 
+          className="bg-transparent w-full focus:outline-none text-sm text-white placeholder-slate-400"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
       </div>
 
-      <div className="grid grid-cols-1 gap-4">
-        {morosos.length > 0 ? morosos.map(c => (
-          <div key={c.id} className="bg-white/5 border border-white/10 rounded-3xl p-6 hover:bg-white/10 transition-all flex flex-col md:flex-row md:items-center justify-between gap-6 border-l-4 border-l-red-500">
-            <div className="flex items-center gap-6">
-              <div className="w-16 h-16 rounded-2xl bg-red-500/10 flex items-center justify-center text-red-500 shadow-inner">
-                <Users size={32} />
+      {/* 2. CUADRÍCULA DE MOROSOS (4 COLUMNAS POR FILA) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        {morosos.length > 0 ? morosos.map((c) => (
+          <div 
+            key={c.id}
+            className="bg-[#112d59]/90 border border-red-500/40 p-3 rounded-2xl shadow-lg hover:border-red-500/70 transition-all duration-300 flex flex-col justify-between"
+          >
+            {/* DATOS DEL CLIENTE */}
+            <div className="mb-2">
+              <div className="flex items-center justify-between gap-1">
+                <h3 className="font-black text-sm text-white truncate">{c.nombre}</h3>
+                <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30 shrink-0">
+                  DEUDOR
+                </span>
               </div>
-              <div>
-                <h3 className="text-xl font-black text-white">{c.nombre}</h3>
-                <div className="flex items-center gap-3 mt-1">
-                  <span className="text-xs font-bold text-gray-500 uppercase">{c.cedula}</span>
-                  <span className="w-1 h-1 rounded-full bg-gray-700" />
-                  <span className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1"><Calendar size={12} /> Hace unos días</span>
-                </div>
-              </div>
+              <p className="text-[10px] text-slate-400 mt-0.5 truncate flex items-center gap-1">
+                🪪 {c.cedula} • 📞 {c.telefono}
+              </p>
             </div>
 
-            <div className="flex flex-col md:flex-row items-center gap-8">
-              <div className="text-center md:text-right">
-                <div className="text-[10px] text-gray-500 font-black uppercase mb-1">Monto Pendiente</div>
-                <div className="text-2xl font-black text-red-400">{formatCurrency(c.saldo_usd)}</div>
-                <div className="text-xs font-bold text-gray-600">Bs. {(c.saldo_usd * tasaBcv).toLocaleString()}</div>
-              </div>
-              
-              <div className="flex gap-2">
-                <button 
-                  onClick={() => c.telefono ? window.open(`tel:${c.telefono}`) : alert('Cliente sin teléfono registrado')}
-                  className="p-4 bg-green-500/10 hover:bg-green-500/20 text-green-500 rounded-2xl transition-all" 
-                  title="Llamar"
-                >
-                  <Phone size={20} />
-                </button>
-                <button 
-                  onClick={() => c.telefono ? window.open(`https://wa.me/${c.telefono.replace(/\\D/g,'')}`) : alert('Cliente sin teléfono registrado')}
-                  className="p-4 bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 rounded-2xl transition-all" 
-                  title="WhatsApp"
-                >
-                  <MessageSquare size={20} />
-                </button>
-                <button 
-                  onClick={() => { setSelectedClient(c); setMontoAbonoUSD(String(c.saldo_usd)); setShowAbonoModal(true); }}
-                  className="bg-white text-black font-black px-6 rounded-2xl hover:bg-gray-200 transition-all text-xs uppercase tracking-widest"
-                >
-                  Registrar Abono
-                </button>
-              </div>
+            {/* DEUDA TOTAL */}
+            <div className="bg-red-950/40 p-2 rounded-xl border border-red-500/30 mb-2.5 flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-400 uppercase">
+                Deuda Total
+              </span>
+              <span className="text-lg font-black text-red-400">
+                {formatCurrency(c.saldo_usd || 0)}
+              </span>
             </div>
+
+            {/* BOTÓN REGISTRAR ABONO */}
+            <button 
+              onClick={() => { setSelectedClient(c); setMontoAbonoUSD(String(c.saldo_usd)); setShowAbonoModal(true); }}
+              className="w-full py-1.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl border border-emerald-500/50 transition-all shadow-md flex items-center justify-center gap-1.5"
+            >
+              <span>💵</span> Registrar Abono
+            </button>
           </div>
         )) : (
-          <div className="text-center py-20 bg-white/5 border border-dashed border-white/10 rounded-[3rem]">
-            <CheckCircle2 size={64} className="mx-auto text-green-500 opacity-20 mb-4" />
-            <h3 className="text-xl font-bold text-gray-500 uppercase tracking-widest leading-loose">No hay morosos pendientes</h3>
-            <p className="text-sm text-gray-700 font-bold uppercase">Cartera de clientes 100% al día</p>
+          <div className="col-span-full flex flex-col items-center justify-center py-10 bg-[#112d59]/80 border border-slate-700/50 rounded-2xl shadow-md">
+            <CheckCircle2 size={40} className="text-emerald-500 mb-2" />
+            <h3 className="text-lg font-black text-white">No hay morosos pendientes</h3>
+            <p className="text-slate-400 text-sm">Cartera de clientes 100% al día</p>
           </div>
         )}
       </div>

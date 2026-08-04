@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, Link } from 'react-router-dom';
-import { 
-  ShoppingCart, 
-  History, 
-  Users, 
-  UserPlus, 
-  Boxes, 
-  Truck, 
-  FileText, 
-  Settings, 
+import {
+  ShoppingCart,
+  History,
+  Users,
+  UserPlus,
+  Boxes,
+  Truck,
+  FileText,
+  Settings,
   LogOut,
   Calculator,
   BookOpen,
@@ -35,14 +35,16 @@ import { useAuth } from '../../contexts/AuthProvider';
 import { cn } from '../../lib/utils';
 import firebaseConfig from '../../../firebase-applet-config.json';
 import { Role } from '../../types';
-import { getLatestTasa, syncLatestTasa, updateManualTasa, subscribeToCollection } from '../../lib/dbUtils';
+import { getLatestTasa, syncLatestTasa, updateManualTasa, subscribeToCollection, getActiveStoreId } from '../../lib/dbUtils';
 
 interface SidebarProps {
   userRole: Role;
+  isMobileMenuOpen?: boolean;
+  setIsMobileMenuOpen?: (isOpen: boolean) => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ userRole }) => {
-  const { user, setUser } = useAuth();
+const Sidebar: React.FC<SidebarProps> = ({ userRole, isMobileMenuOpen, setIsMobileMenuOpen }) => {
+  const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(true);
 
   // ── Tasa BCV: mostrar último valor conocido INSTANTANEAMENTE ──
@@ -57,13 +59,15 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole }) => {
         const isFresh = parsed.timestamp ? (Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) : true;
         if (parsed.valor && parsed.valor > 100 && isFresh) return parsed;
       }
-    } catch {}
+    } catch { }
     return { valor: TASA_FALLBACK, estatus: 'Referencial' };
   };
 
   const [tasa, setTasa] = useState<{ valor: number; estatus: string }>(getInitialTasa);
   const [tasaDebug, setTasaDebug] = useState<string>('Iniciando...');
   const [syncing, setSyncing] = useState(false);
+  const [configName, setConfigName] = useState<{ name: string, tag: string } | null>(null);
+  const [storeDocName, setStoreDocName] = useState<{ name: string, tag: string } | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -79,7 +83,7 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole }) => {
             try {
               const parsed = JSON.parse(cached);
               if (parsed.valor > 100) return { valor: parsed.valor, estatus: 'Última conocida' };
-            } catch {}
+            } catch { }
           }
           return { valor: TASA_FALLBACK, estatus: 'Referencial' };
         }
@@ -157,7 +161,7 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole }) => {
                 setTasaDebug(`CACHE: Bs. ${parsed.valor} — sin conexión`);
                 return;
               }
-            } catch {}
+            } catch { }
           }
           setTasaDebug(`Sin conexión al BCV`);
         }
@@ -188,14 +192,59 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole }) => {
         }
       }
     });
+    const unsubConfig = subscribeToCollection('configuracion', (data) => {
+      if (!mounted) return;
+      import('../../lib/dbUtils').then(({ getActiveStoreId }) => {
+        const activeStoreId = getActiveStoreId();
+        const storeConfig = data.find(c => c.id === activeStoreId);
+        if (storeConfig && storeConfig.empresa_nombre) {
+          const parts = storeConfig.empresa_nombre.split(' ');
+          setConfigName({
+            name: parts[0].toUpperCase(),
+            tag: parts.slice(1).join(' ').toUpperCase() || 'STORE'
+          });
+        } else if (activeStoreId === 'kalu-queso-sanjuan') {
+          const globalConfig = data.find(c => c.id === 'global');
+          if (globalConfig && globalConfig.empresa_nombre) {
+            const parts = globalConfig.empresa_nombre.split(' ');
+            setConfigName({
+              name: parts[0].toUpperCase(),
+              tag: parts.slice(1).join(' ').toUpperCase() || 'STORE'
+            });
+          }
+        } else {
+          setConfigName(null);
+        }
+      });
+    });
+
+    const unsubStores = subscribeToCollection('stores', (data) => {
+      if (!mounted) return;
+      import('../../lib/dbUtils').then(({ getActiveStoreId }) => {
+        const activeStoreId = getActiveStoreId();
+        const storeDoc = data.find(s => s.id === activeStoreId);
+        if (storeDoc && storeDoc.name) {
+          const parts = storeDoc.name.split(' ');
+          setStoreDocName({
+            name: parts[0].toUpperCase(),
+            tag: parts.slice(1).join(' ').toUpperCase() || 'STORE'
+          });
+        } else {
+          setStoreDocName(null);
+        }
+      });
+    });
+
     return () => {
       mounted = false;
       clearTimeout(fallbackTimer);
       unsubTasa();
+      unsubConfig();
+      unsubStores();
     };
   }, []);
 
-  const [syncMsg, setSyncMsg] = useState<{type: 'ok'|'err', text: string} | null>(null);
+  const [syncMsg, setSyncMsg] = useState<{ type: 'ok' | 'err', text: string } | null>(null);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -252,16 +301,33 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole }) => {
         { path: '/ai-market', icon: Bot, label: 'IA MERCADO' },
         { path: '/settings', icon: Settings, label: 'AJUSTES' },
       ]
-    }
+    },
+    ...((userRole === Role.SUPERADMIN || user?.storeId === 'kalu-queso-sanjuan') ? [{
+      label: 'SuperAdmin',
+      items: [
+        { path: '/superadmin', icon: Store, label: 'MULTI-TIENDAS' },
+      ]
+    }] : [])
   ];
 
   const handleLogout = async () => {
     try {
-      await auth.signOut();
-      localStorage.clear();
+      const storeParam = new URLSearchParams(window.location.search).get('store');
+      const savedStore = localStorage.getItem('activeStoreId');
+      const storeToKeep = storeParam || savedStore || 'kalu-queso-sanjuan';
+
+      // Limpiar sesión local
+      localStorage.removeItem('kalu_current_user');
+      localStorage.removeItem('kalu_pin_verified');
+      localStorage.removeItem('kalu_remembered_user');
       sessionStorage.clear();
-      setUser(null);
-      window.location.href = '/';
+      localStorage.setItem('activeStoreId', storeToKeep);
+
+      // Desconectamos en Firebase
+      await auth.signOut();
+
+      // Redirigir explícitamente y de forma dura a admin/login
+      window.location.href = `/admin/login?store=${storeToKeep}`;
     } catch (error) {
       console.error('Error logging out:', error);
     }
@@ -269,26 +335,30 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole }) => {
 
   return (
     <div className={cn(
-      "h-screen bg-[#0f172a] border-r border-white/10 flex flex-col sticky top-0 font-sans transition-all duration-300 relative",
-      isOpen ? "w-72" : "w-20"
+      "h-screen bg-[#0f172a] border-r border-white/10 flex flex-col font-sans transition-transform duration-300 z-50",
+      "fixed inset-y-0 left-0 md:relative md:translate-x-0",
+      isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+      isOpen ? "w-72" : "w-20 hidden md:flex"
     )}>
       {/* Toggle Button */}
-      <button 
+      <button
         onClick={() => setIsOpen(!isOpen)}
-        className="absolute -right-4 top-8 w-8 h-8 bg-[#3498db] text-white rounded-full flex items-center justify-center shadow-lg shadow-[#3498db]/20 z-50 hover:bg-[#2980b9] transition-colors"
+        className="hidden md:flex absolute -right-4 top-8 w-8 h-8 bg-[#3498db] text-white rounded-full items-center justify-center shadow-lg shadow-[#3498db]/20 z-50 hover:bg-[#2980b9] transition-colors"
       >
         {isOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
       </button>
 
       {/* Brand Section */}
       <div className={cn("p-6 pb-4 flex items-center", isOpen ? "gap-4" : "justify-center")}>
-        <div className="w-10 h-10 bg-gradient-to-br from-[#3498db] to-[#2ecc71] rounded-2xl flex items-center justify-center shadow-lg shadow-[#3498db]/20 shrink-0">
-          <Rocket className="text-white" size={18} fill="white" />
-        </div>
+        <img 
+          src="/logo.jpg?v=2026" 
+          alt="Mercado San Juan" 
+          className="w-10 h-10 rounded-full object-cover flex-shrink-0 shadow-sm"
+        />
         {isOpen && (
           <div className="overflow-hidden">
-            <span className="block text-2xl font-black text-white tracking-tighter leading-none">KALU</span>
-            <span className="block text-[10px] font-black text-[#3498db] tracking-[0.4em] mt-1 truncate">2024 PRO</span>
+            <span className="block text-2xl font-black text-white tracking-tighter leading-none truncate">{configName?.name || storeDocName?.name || 'CARGANDO'}</span>
+            <span className="block text-[10px] font-black text-[#3498db] tracking-[0.2em] mt-1 truncate">{configName?.tag || storeDocName?.tag || 'STORE'}</span>
           </div>
         )}
       </div>
@@ -305,7 +375,10 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole }) => {
           if (userRole === Role.CAJERO) {
             return g.label === 'Ventas';
           }
-          // Admins / Duenos / Supervisors see everything except Portal Vecino
+          if (g.label === 'SuperAdmin') {
+            return userRole === Role.SUPERADMIN || user?.storeId === 'kalu-queso-sanjuan';
+          }
+          // Admins / Duenos / Supervisors see everything except Portal Vecino y SuperAdmin
           return g.label !== 'Portal Vecino';
         }).map((group, idx) => (
           <div key={idx} className="space-y-1">
@@ -314,12 +387,13 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole }) => {
               <NavLink
                 key={item.path}
                 to={item.path}
+                onClick={() => setIsMobileMenuOpen?.(false)}
                 title={!isOpen ? item.label : undefined}
                 className={({ isActive }) => cn(
                   "flex items-center gap-4 py-3 rounded-2xl transition-all duration-200 group",
                   isOpen ? "px-4" : "justify-center",
-                  isActive 
-                    ? "bg-[#3498db] text-white shadow-lg shadow-[#3498db]/20 font-black" 
+                  isActive
+                    ? "bg-[#3498db] text-white shadow-lg shadow-[#3498db]/20 font-black"
                     : "text-gray-500 hover:text-white hover:bg-white/5 font-bold"
                 )}
               >
@@ -373,11 +447,10 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole }) => {
               }
             </div>
             {syncMsg && (
-              <div className={`mt-1.5 text-[8px] font-black px-2 py-1 rounded-lg ${
-                syncMsg.type === 'ok'
+              <div className={`mt-1.5 text-[8px] font-black px-2 py-1 rounded-lg ${syncMsg.type === 'ok'
                   ? 'bg-green-500/15 text-green-400'
                   : 'bg-red-500/15 text-red-400'
-              }`}>
+                }`}>
                 {syncMsg.text}
               </div>
             )}
@@ -393,11 +466,13 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole }) => {
             {isOpen && (
               <div className="flex flex-col min-w-0">
                 <span className="text-xs font-black text-white leading-none uppercase tracking-tight truncate">{user?.username || 'Admin'}</span>
-                <span className="text-[8px] text-gray-600 font-bold uppercase tracking-widest truncate">{user?.role || 'ADMIN'}</span>
+                <span className="text-[8px] text-gray-600 font-bold uppercase tracking-widest truncate">
+                  {userRole === Role.SUPERADMIN ? 'SUPERADMIN' : (user?.role || 'ADMIN')}
+                </span>
               </div>
             )}
           </Link>
-          <button 
+          <button
             onClick={handleLogout}
             title={!isOpen ? "Cerrar Sesión" : undefined}
             className="w-9 h-9 rounded-xl bg-red-500/10 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all border border-red-500/20 flex-shrink-0"

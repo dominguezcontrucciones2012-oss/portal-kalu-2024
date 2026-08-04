@@ -1,4 +1,5 @@
 export enum Role {
+  SUPERADMIN = 'superadmin',
   ADMIN = 'admin',
   DUENO = 'dueno',
   SUPERVISOR = 'supervisor',
@@ -15,6 +16,27 @@ export interface User {
   email?: string;
   avatar?: string;
   pin?: string;
+  storeId?: string;
+}
+
+export interface StoreFeatures {
+  hasOnlineStore: boolean;
+  hasAI: boolean;
+  hasWhatsApp: boolean;
+  hasVIPCredit: boolean;
+  hasPOS: boolean;
+  hasOpenTabs?: boolean;
+}
+
+export interface Store {
+  id: string;
+  name: string;
+  status: 'active' | 'suspended' | 'pending';
+  ownerUid: string;
+  plan: 'free' | 'premium';
+  settings?: any;
+  features?: StoreFeatures;
+  createdAt: any;
 }
 
 export interface PiezaProducto {
@@ -27,6 +49,7 @@ export interface PiezaProducto {
 
 export interface Product {
   id: string;
+  storeId?: string;
   codigo: string;
   nombre: string;
   categoria: string;
@@ -48,17 +71,20 @@ export interface Product {
 
 export interface Client {
   id: string;
+  storeId?: string;
   nombre: string;
   cedula: string;
   telefono?: string;
   direccion?: string;
   saldo_usd: number;
   puntos: number;
+  origen_store_id?: string;
   role: Role.CLIENTE;
 }
 
 export interface Productor {
   id: string;
+  storeId?: string;
   nombre: string;
   rif: string;
   telefono?: string;
@@ -71,6 +97,7 @@ export interface Productor {
 
 export interface Provider {
   id: string;
+  storeId?: string;
   nombre: string;
   contacto: string;
   telefono: string;
@@ -98,8 +125,20 @@ export interface SaleDetail {
   pieza_numero?: string;
 }
 
+export interface OpenTab {
+  id: string;
+  storeId?: string;
+  fecha_inicio: string;
+  identificador: string;
+  cliente_id?: string;
+  cliente_nombre?: string;
+  detalles: SaleDetail[];
+  total_usd: number;
+}
+
 export interface Sale {
   id: string;
+  storeId?: string;
   fecha: string;
   cliente_id?: string;
   nombre_cliente: string;
@@ -120,10 +159,13 @@ export interface Sale {
   repartidor_id?: string;
   estado_repartidor?: 'buscando_repartidor' | 'asignado' | 'en_camino' | 'entregado';
   captures_pago?: string[];
+  vuelto_usd?: number;
+  vuelto_bs?: number;
 }
 
 export interface VentaPausada {
   id: string;
+  storeId?: string;
   fecha: string;
   cliente_id?: string;
   cliente_nombre_manual?: string;
@@ -135,6 +177,7 @@ export interface VentaPausada {
 
 export interface CierreCaja {
   id: string;
+  storeId?: string;
   fecha: string;
   monto_bs: number;
   monto_usd: number;
@@ -158,6 +201,7 @@ export interface CierreCaja {
 
 export interface MovementProductor {
   id: string;
+  storeId?: string;
   fecha: string;
   proveedor_id: string;
   tipo: 'ENTREGA_QUESO' | 'PAGO' | 'ANTICIPO' | 'COMPRA_POS' | 'AJUSTE';
@@ -183,6 +227,7 @@ export interface CuentaContable {
 
 export interface Asiento {
   id: string;
+  storeId?: string;
   fecha: string;
   descripcion: string;
   tasa_referencia: number;
@@ -202,6 +247,7 @@ export interface DetalleAsiento {
 
 export interface InventoryAudit {
   id: string;
+  storeId?: string;
   producto_id: string;
   usuario_id: string;
   tipo_movimiento: 'ENTRADA' | 'SALIDA' | 'AJUSTE' | 'VENTA' | 'COMPRA';
@@ -212,6 +258,7 @@ export interface InventoryAudit {
 
 export interface Configuration {
   id: string;
+  storeId?: string;
   empresa_nombre: string;
   empresa_rif: string;
   empresa_telefono: string;
@@ -225,6 +272,7 @@ export interface Configuration {
 
 export interface Movement {
   id: string;
+  storeId?: string;
   fecha: string;
   tipo: 'NOMINA' | 'PAGO' | 'ABONO' | 'ENTREGA_QUESO' | 'VENTA' | 'GRES';
   descripcion: string;

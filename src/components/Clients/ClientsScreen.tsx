@@ -10,10 +10,11 @@ import {
   X,
   ExternalLink,
   Save,
-  Truck
+  Truck,
+  Lock
 } from 'lucide-react';
 import { cn, formatCurrency } from '../../lib/utils';
-import { subscribeToCollection, createClient, getLatestTasa, updateDocument, resetClientPin } from '../../lib/dbUtils';
+import { subscribeToCollection, createClient, getLatestTasa, updateDocument, resetClientPin, getActiveStoreId } from '../../lib/dbUtils';
 import { type Client, type Sale, type Product, Role } from '../../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
@@ -46,56 +47,6 @@ const ClientsScreen: React.FC = () => {
 
   useEffect(() => {
     const projectId = 'kalu-queso-sanjuam';
-
-    // ── Leer clientes vía REST de Firestore (no depende de WebSockets) ──
-    const fetchClientsViaRest = async () => {
-      try {
-        // Intentar primero con clientes guardados en localStorage
-        const cached = localStorage.getItem('kalu_clients_data');
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (parsed && parsed.length > 0) {
-            setClients(parsed as Client[]);
-            setLoading(false);
-          }
-        }
-        // Traer de Firestore REST directamente
-        const dbId = firebaseConfig.firestoreDatabaseId || '(default)';
-        const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${dbId}/documents/clients?pageSize=200`;
-        
-        const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
-        const headers = token ? { 'Authorization': `Bearer ${token}` } : undefined;
-
-        const res = await fetch(url, { headers });
-        if (res.ok) {
-          const json = await res.json();
-          if (json.documents && json.documents.length > 0) {
-            const docs = json.documents.map((d: any) => {
-              const fields = d.fields || {};
-              const parseNumber = (field: any) => Number(field?.doubleValue ?? field?.integerValue ?? field?.stringValue ?? 0);
-              return {
-                id: d.name?.split('/').pop() || '',
-                nombre: fields.nombre?.stringValue || '',
-                cedula: fields.cedula?.stringValue || '',
-                telefono: fields.telefono?.stringValue || '',
-                direccion: fields.direccion?.stringValue || '',
-                saldo_usd: parseNumber(fields.saldo_usd),
-                puntos: parseInt(fields.puntos?.integerValue ?? 0, 10),
-                email: fields.email?.stringValue || '',
-                role: 'cliente' as any,
-              } as Client;
-            });
-            setClients(docs);
-            setLoading(false);
-            localStorage.setItem('kalu_clients_data', JSON.stringify(docs));
-          }
-        }
-      } catch (e) {
-        console.warn('REST clients fetch falló:', e);
-      }
-    };
-
-    fetchClientsViaRest();
 
     // Suscripción WebSocket secundaria (se activa si CANTV no bloquea)
     const unsubscribeClients = subscribeToCollection('clients', (data) => {
@@ -249,6 +200,7 @@ const ClientsScreen: React.FC = () => {
 
       await setDoc(doc(db, 'users', targetUserId), { 
         role: newRole,
+        storeId: isRep ? '' : getActiveStoreId(),
         username: client.nombre,
         nombre: client.nombre,
         cedula: client.cedula,
@@ -269,13 +221,31 @@ const ClientsScreen: React.FC = () => {
 
   return (
     <>
-      <div className="space-y-8 animate-in fade-in duration-700">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
-          <h1 className="text-3xl font-black text-white flex items-center gap-3">
-            <Users className="text-[#3498db]" /> CONTROL DE CLIENTES
-          </h1>
-          <p className="text-gray-400 text-sm">Base de datos centralizada de San Lorenzo Tiznados</p>
+      <div className="min-h-screen text-white p-4 md:p-6 pt-1 md:pt-1 transition-all duration-300 space-y-8 animate-in fade-in">
+      {/* CABECERA: Botón de regresar en el lugar de las personitas + Título */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-3">
+        <div className="flex items-center gap-3">
+          
+          {/* BOTÓN REGRESAR (Remplaza el ícono de las personitas) */}
+          <button 
+            onClick={() => navigate(-1)}
+            title="Volver atrás"
+            className="w-9 h-9 flex items-center justify-center bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-400 rounded-full transition-all border border-cyan-500/30 shrink-0"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+
+          {/* TÍTULO Y SUBTÍTULO */}
+          <div>
+            <h1 className="text-2xl md:text-3xl font-black tracking-wide uppercase leading-none">
+              CONTROL DE CLIENTES
+            </h1>
+            <p className="text-xs text-slate-400 mt-1">
+              Base de datos centralizada de San Lorenzo Tiznados
+            </p>
+          </div>
         </div>
         <button 
           onClick={() => setShowAddModal(true)}
@@ -316,81 +286,108 @@ const ClientsScreen: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filtered.map(client => {
+      {/* GRID DE CLIENTES: Ahora ajustado a 4 columnas */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+        {filtered.map((client) => {
+          const hasDebt = (client.saldo_usd || 0) > 0;
           const userDoc = usersMap[client.id] || Object.values(usersMap).find((u: any) => u.clientId === client.id || u.cedula === client.cedula);
           const isRepartidor = userDoc && userDoc.role === 'repartidor';
-          
+          const isAssignedToOtherStore = isRepartidor && userDoc.storeId && userDoc.storeId !== getActiveStoreId();
+
           return (
-            <div key={client.id} className="group bg-white/5 border border-white/10 rounded-[2.5rem] p-6 hover:bg-white/10 transition-all cursor-pointer relative overflow-hidden">
-              <div className="absolute -right-4 -top-4 opacity-5 pointer-events-none group-hover:scale-110 transition-transform">
-                <Users size={120} />
-              </div>
-
-              <div className="flex justify-between items-start mb-6">
-                <div className="w-14 h-14 rounded-3xl bg-blue-500/20 flex items-center justify-center text-blue-400">
-                  <Users size={28} />
+            <div 
+              key={client.id}
+              className={`p-3 rounded-2xl border transition-all duration-300 shadow-md flex flex-col justify-between group ${
+                hasDebt 
+                  ? 'bg-[#112d59]/90 border-red-500/50 hover:border-red-400' 
+                  : 'bg-[#112d59]/80 border-slate-700/50 hover:border-cyan-500/40'
+              }`}
+            >
+              {/* 1. CABECERA COMPACTA: NOMBRE A LA IZQ / AL DÍA + PTS A LA DERECHA */}
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="truncate flex-1">
+                  <h3 className="font-extrabold text-sm text-white truncate leading-tight group-hover:text-cyan-400 transition-colors">
+                    {client.nombre}
+                  </h3>
+                  <div className="flex flex-col gap-0.5 mt-1">
+                    <p className="text-[10px] text-slate-400 truncate flex items-center gap-1">
+                      <IdCard size={10} /> {client.cedula}
+                    </p>
+                    <p className="text-[10px] text-slate-400 truncate flex items-center gap-1">
+                      <Phone size={10} /> {client.telefono || 'N/A'}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex flex-col items-end">
-                  {isRepartidor ? (
-                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-purple-500/20 text-purple-400 border border-purple-500/30 mb-2">
-                      Repartidor
+
+                {/* BADGES PEGADOS AL NOMBRE */}
+                <div className="flex flex-col items-end shrink-0 gap-1">
+                  {isRepartidor && (
+                    <span className="text-[8px] font-black uppercase tracking-widest bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full border border-purple-500/30">
+                      {isAssignedToOtherStore ? 'En otra tienda' : 'Repartidor'}
                     </span>
-                  ) : null}
-                  <span className={cn(
-                    "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
-                    client.saldo_usd > 0 ? "bg-red-500 text-white" : "bg-green-500/20 text-green-400"
-                  )}>
-                    {client.saldo_usd > 0 ? "Moroso" : "Al Día"}
+                  )}
+                  <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase border ${
+                    hasDebt 
+                      ? 'bg-red-500/20 text-red-400 border-red-500/40 animate-pulse' 
+                      : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                  }`}>
+                    {hasDebt ? 'DEUDA' : 'AL DÍA'}
                   </span>
-                  <div className="flex items-center gap-1 mt-2 text-yellow-500">
-                    <Star size={12} fill="currentColor" />
-                    <span className="text-xs font-black">{client.puntos} pts</span>
-                  </div>
+                  <span className="text-[9px] text-amber-400 font-bold flex items-center gap-0.5">
+                    ⭐ {client.puntos || 0} pts
+                  </span>
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <div>
-                  <h3 className="text-xl font-black text-white group-hover:text-[#3498db] transition-colors">{client.nombre}</h3>
-                  <div className="flex items-center gap-3 mt-1 text-gray-500 font-bold text-xs uppercase">
-                    <span className="flex items-center gap-1"><IdCard size={12} /> {client.cedula}</span>
-                    <span className="flex items-center gap-1"><Phone size={12} /> {client.telefono}</span>
-                  </div>
-                </div>
+              {/* 2. CAJA DE SALDO PENDIENTES (MÁS PEQUEÑA) */}
+              <div className={`p-2 rounded-xl mb-2.5 border flex items-center justify-between ${
+                hasDebt ? 'bg-red-950/30 border-red-500/30' : 'bg-slate-900/40 border-slate-800'
+              }`}>
+                <span className="text-[10px] font-bold text-slate-400 uppercase">
+                  Saldo Pendiente
+                </span>
+                <span className={`text-base font-black ${hasDebt ? 'text-red-400' : 'text-white'}`}>
+                  {formatCurrency(client.saldo_usd || 0)}
+                </span>
+              </div>
 
-                <div className="p-4 bg-black/20 rounded-2xl border border-white/5">
-                  <div className="text-[10px] text-gray-500 font-black uppercase mb-1">Saldo Pendiente</div>
-                  <div className={cn(
-                    "text-2xl font-black",
-                    client.saldo_usd > 0 ? "text-red-400" : "text-gray-400"
-                  )}>
-                    {formatCurrency(client.saldo_usd)}
-                  </div>
-                </div>
-                
+              {/* ACCIONES COMPACTAS: BOTÓN ASIGNAR ROL */}
+              <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-slate-700/30">
                 <button 
                   onClick={(e) => { e.stopPropagation(); handleToggleRepartidor(client, userDoc?.role, userDoc?.id); }}
+                  disabled={isAssignedToOtherStore}
                   className={cn(
-                    "w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all mt-2 flex items-center justify-center gap-1.5",
-                    isRepartidor 
-                      ? "bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20" 
-                      : "bg-purple-500/10 text-purple-400 border-purple-500/30 hover:bg-purple-500/20"
+                    "w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all flex items-center justify-center gap-1.5",
+                    isAssignedToOtherStore 
+                      ? "bg-gray-500/10 text-gray-500 border-gray-500/30 cursor-not-allowed"
+                      : isRepartidor 
+                        ? "bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20" 
+                        : "bg-purple-500/10 text-purple-400 border-purple-500/30 hover:bg-purple-500/20"
                   )}
                 >
-                  <Truck size={14} />
-                  {isRepartidor ? "Quitar rol de Repartidor" : "Asignar como Repartidor"}
+                  {isAssignedToOtherStore ? (
+                    <>
+                      <Lock size={14} /> Otra Tienda
+                    </>
+                  ) : (
+                    <>
+                      <Truck size={14} />
+                      {isRepartidor ? "Quitar Rol" : "Asignar como Repartidor"}
+                    </>
+                  )}
                 </button>
+
+                {/* BOTONES RESTAURADOS: HISTORIAL Y EDITAR (>) */}
+                <div className="mt-2 pt-4 border-t border-white/5 flex items-center justify-between">
+                  <button onClick={() => navigate('/history', { state: { searchQuery: client.nombre } })} className="text-gray-500 hover:text-white transition-colors text-xs font-black uppercase tracking-widest underline decoration-2 underline-offset-4">
+                    Ver Historial
+                  </button>
+                  <button onClick={() => setEditingClient(client)} className="p-3 bg-white/5 hover:bg-[#3498db] hover:text-white rounded-2xl transition-all">
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
               </div>
 
-              <div className="mt-6 pt-6 border-t border-white/5 flex items-center justify-between">
-                <button onClick={() => navigate('/history', { state: { searchQuery: client.nombre } })} className="text-gray-500 hover:text-white transition-colors text-xs font-black uppercase tracking-widest underline decoration-2 underline-offset-4">
-                  Ver Historial
-                </button>
-                <button onClick={() => setEditingClient(client)} className="p-3 bg-white/5 hover:bg-[#3498db] hover:text-white rounded-2xl transition-all">
-                  <ChevronRight size={18} />
-                </button>
-              </div>
             </div>
           );
         })}
