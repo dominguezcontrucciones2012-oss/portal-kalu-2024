@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  Search, 
-  Camera, 
-  Plus, 
-  Trash2, 
-  Zap, 
+import {
+  Search,
+  Camera,
+  Plus,
+  Trash2,
+  Zap,
   FileText,
   Save,
   Loader2,
@@ -16,6 +16,7 @@ import { db } from '../../lib/firebase';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, serverTimestamp, increment } from 'firebase/firestore';
 import { subscribeToCollection } from '../../lib/dbUtils';
 import { useAuth } from '../../contexts/AuthProvider';
+import { useActiveStore } from '../../hooks/useActiveStore';
 import { useToast } from '../../contexts/ToastProvider';
 import { cn, formatCurrency, compressImage } from '../../lib/utils';
 import { scanInvoiceIA, interactWithInvoiceIA } from '../../services/geminiService';
@@ -25,6 +26,7 @@ import { useNavigate } from 'react-router-dom';
 const PurchasesScreen: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { activeStore } = useActiveStore();
   const { addToast } = useToast();
   const [providers, setProviders] = useState<any[]>([]);
   const [selectedProvider, setSelectedProvider] = useState('');
@@ -77,6 +79,11 @@ const PurchasesScreen: React.FC = () => {
   };
 
   const handleAiAdjustment = async () => {
+    if (activeStore?.features?.hasAIPurchases === false) {
+      window.alert('El ajuste e ingreso de inventario con IA es una función del Plan Pro. Actualiza tu plan para disfrutarla.');
+      return;
+    }
+    
     if (!aiCommand.trim() || items.length === 0) return;
     setAiAdjusting(true);
     try {
@@ -109,7 +116,7 @@ const PurchasesScreen: React.FC = () => {
     recognition.interimResults = false;
 
     recognition.onstart = () => setIsListening(true);
-    
+
     recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript;
       setAiCommand(prev => (prev ? prev + ' ' : '') + transcript);
@@ -127,6 +134,12 @@ const PurchasesScreen: React.FC = () => {
   };
 
   const handleScanInvoice = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (activeStore?.features?.hasAIPurchases === false) {
+      window.alert('La digitalización inteligente de facturas es una función Pro. Actualiza tu plan para disfrutarla.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -144,7 +157,7 @@ const PurchasesScreen: React.FC = () => {
 
       const compressedBase64 = await compressImage(file, 800);
       const result = await scanInvoiceIA(compressedBase64, tasa, productNames);
-      
+
       if (Array.isArray(result) && result.length > 0) {
         const normalizedResult = result.map((item: any) => ({
           ...item,
@@ -179,11 +192,11 @@ const PurchasesScreen: React.FC = () => {
   const handleSavePurchase = async () => {
     if (items.length === 0) return addToast('error', 'Agrega al menos un producto');
     if (!selectedProvider) return addToast('error', 'Selecciona un proveedor');
-    
+
     setSaving(true);
     try {
       const batchItems = [...items];
-      
+
       // 1. Process each item (Update stock or create product)
       for (const item of batchItems) {
         const { getActiveStoreId, addDocument } = await import('../../lib/dbUtils');
@@ -270,7 +283,7 @@ const PurchasesScreen: React.FC = () => {
   if (isManualModalOpen) {
     return (
       <div className="min-h-screen text-white p-4 md:p-6 pt-1 md:pt-1 transition-all duration-300">
-        <ManualPurchaseModal 
+        <ManualPurchaseModal
           isOpen={isManualModalOpen}
           onClose={() => setIsManualModalOpen(false)}
           providers={providers}
@@ -283,93 +296,93 @@ const PurchasesScreen: React.FC = () => {
     <div className="min-h-screen text-white p-4 md:p-6 pt-1 md:pt-1 transition-all duration-300">
       <div className="space-y-8 animate-in fade-in duration-700">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-3">
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={() => navigate(-1)}
-            title="Volver atrás"
-            className="w-9 h-9 flex items-center justify-center bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-400 rounded-full transition-all border border-cyan-500/30 shrink-0"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <div>
-            <h1 className="text-2xl md:text-3xl font-black tracking-wide uppercase leading-none">
-              CARGA DE MERCANCÍA
-            </h1>
-            <p className="text-xs text-slate-400 mt-1">
-              Incremento de stock y actualización de costos
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-3">
-          <input 
-            type="file" 
-            accept="image/*" 
-            ref={fileInputRef} 
-            className="hidden" 
-            onChange={handleScanInvoice} 
-          />
-          
-          {hasFrozen && (
-            <button onClick={handleUnfreeze} className="bg-orange-500 hover:bg-orange-600 text-white font-black py-4 px-6 rounded-2xl shadow-xl transition-all flex items-center gap-2 text-sm uppercase">
-              <Flame size={18} /> DESCONGELAR
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate(-1)}
+              title="Volver atrás"
+              className="w-9 h-9 flex items-center justify-center bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-400 rounded-full transition-all border border-cyan-500/30 shrink-0"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
+              </svg>
             </button>
-          )}
-
-          <button onClick={handleFreeze} disabled={items.length === 0} className="bg-slate-700 hover:bg-slate-600 text-white font-black py-4 px-6 rounded-2xl shadow-xl transition-all flex items-center gap-2 text-sm uppercase disabled:opacity-50">
-            <Snowflake size={18} /> CONGELAR
-          </button>
-
-          <button 
-            onClick={triggerFileInput}
-            disabled={scanning}
-            className="bg-[#9b59b6] hover:bg-[#8e44ad] text-white font-black py-4 px-8 rounded-2xl shadow-xl shadow-purple-500/10 transition-all flex items-center gap-3 text-sm uppercase tracking-widest disabled:opacity-50"
-          >
-            {scanning ? <Loader2 className="animate-spin" /> : <Zap size={18} fill="currentColor" />} 
-            {scanning ? "PROCESANDO IA..." : "ESCANEAR FACTURA IA"}
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-[#9b59b6]/10 border border-[#9b59b6]/30 rounded-[2.5rem] p-6 flex flex-col md:flex-row gap-4 items-center">
-            <div className="bg-[#9b59b6]/20 p-3 rounded-full flex-shrink-0">
-              <Zap size={24} className="text-[#9b59b6] animate-pulse" fill="currentColor" />
+            <div>
+              <h1 className="text-2xl md:text-3xl font-black tracking-wide uppercase leading-none">
+                CARGA DE MERCANCÍA
+              </h1>
+              <p className="text-xs text-slate-400 mt-1">
+                Incremento de stock y actualización de costos
+              </p>
             </div>
-            
-            <button
-              onClick={startVoiceRecognition}
-              title="Dictar instrucción por voz"
-              className={cn(
-                "p-4 rounded-full flex-shrink-0 transition-all shadow-md",
-                isListening ? "bg-red-500 text-white animate-pulse shadow-red-500/50" : "bg-black/30 text-gray-400 hover:text-white hover:bg-black/50"
-              )}
-            >
-              <Mic size={20} />
+          </div>
+          <div className="flex gap-3">
+            <input
+              type="file"
+              accept="image/*"
+              ref={fileInputRef}
+              className="hidden"
+              onChange={handleScanInvoice}
+            />
+
+            {hasFrozen && (
+              <button onClick={handleUnfreeze} className="bg-orange-500 hover:bg-orange-600 text-white font-black py-4 px-6 rounded-2xl shadow-xl transition-all flex items-center gap-2 text-sm uppercase">
+                <Flame size={18} /> DESCONGELAR
+              </button>
+            )}
+
+            <button onClick={handleFreeze} disabled={items.length === 0} className="bg-slate-700 hover:bg-slate-600 text-white font-black py-4 px-6 rounded-2xl shadow-xl transition-all flex items-center gap-2 text-sm uppercase disabled:opacity-50">
+              <Snowflake size={18} /> CONGELAR
             </button>
 
-            <input
-              type="text"
-              value={aiCommand}
-              onChange={(e) => setAiCommand(e.target.value)}
-              placeholder="Ej. 'La harina son 40 pacas de 12, el costo de la pasta es 14000, margen al 20%...'"
-              className="flex-1 bg-black/30 border border-white/10 rounded-2xl py-4 px-6 text-sm font-medium focus:border-[#9b59b6] outline-none text-white w-full"
-              onKeyDown={(e) => e.key === 'Enter' && handleAiAdjustment()}
-            />
             <button
-              onClick={handleAiAdjustment}
-              disabled={aiAdjusting || items.length === 0 || !aiCommand.trim()}
-              className="bg-[#9b59b6] hover:bg-[#8e44ad] text-white font-black py-4 px-8 rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 text-xs uppercase disabled:opacity-50 whitespace-nowrap w-full md:w-auto"
+              onClick={triggerFileInput}
+              disabled={scanning}
+              className="bg-[#9b59b6] hover:bg-[#8e44ad] text-white font-black py-4 px-8 rounded-2xl shadow-xl shadow-purple-500/10 transition-all flex items-center gap-3 text-sm uppercase tracking-widest disabled:opacity-50"
             >
-              {aiAdjusting ? <Loader2 className="animate-spin" size={18} /> : <Zap size={18} fill="currentColor" />}
-              {aiAdjusting ? "PENSANDO..." : "AJUSTAR CON IA"}
+              {scanning ? <Loader2 className="animate-spin" /> : <Zap size={18} fill="currentColor" />}
+              {scanning ? "PROCESANDO IA..." : "ESCANEAR FACTURA IA"}
             </button>
           </div>
+        </div>
 
-          <div className="bg-white/5 border border-white/10 rounded-[2.5rem] overflow-hidden">
-             <table className="w-full text-left">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-6">
+            <div className="bg-[#9b59b6]/10 border border-[#9b59b6]/30 rounded-[2.5rem] p-6 flex flex-col md:flex-row gap-4 items-center">
+              <div className="bg-[#9b59b6]/20 p-3 rounded-full flex-shrink-0">
+                <Zap size={24} className="text-[#9b59b6] animate-pulse" fill="currentColor" />
+              </div>
+
+              <button
+                onClick={startVoiceRecognition}
+                title="Dictar instrucción por voz"
+                className={cn(
+                  "p-4 rounded-full flex-shrink-0 transition-all shadow-md",
+                  isListening ? "bg-red-500 text-white animate-pulse shadow-red-500/50" : "bg-black/30 text-gray-400 hover:text-white hover:bg-black/50"
+                )}
+              >
+                <Mic size={20} />
+              </button>
+
+              <input
+                type="text"
+                value={aiCommand}
+                onChange={(e) => setAiCommand(e.target.value)}
+                placeholder="Ej. 'La harina son 40 pacas de 12, el costo de la pasta es 14000, margen al 20%...'"
+                className="flex-1 bg-black/30 border border-white/10 rounded-2xl py-4 px-6 text-sm font-medium focus:border-[#9b59b6] outline-none text-white w-full"
+                onKeyDown={(e) => e.key === 'Enter' && handleAiAdjustment()}
+              />
+              <button
+                onClick={handleAiAdjustment}
+                disabled={aiAdjusting || items.length === 0 || !aiCommand.trim()}
+                className="bg-[#9b59b6] hover:bg-[#8e44ad] text-white font-black py-4 px-8 rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 text-xs uppercase disabled:opacity-50 whitespace-nowrap w-full md:w-auto"
+              >
+                {aiAdjusting ? <Loader2 className="animate-spin" size={18} /> : <Zap size={18} fill="currentColor" />}
+                {aiAdjusting ? "PENSANDO..." : "AJUSTAR CON IA"}
+              </button>
+            </div>
+
+            <div className="bg-white/5 border border-white/10 rounded-[2.5rem] overflow-hidden">
+              <table className="w-full text-left">
                 <thead>
                   <tr className="bg-white/5 text-[10px] font-black uppercase text-gray-500 tracking-widest">
                     <th className="px-6 py-6">Producto</th>
@@ -381,14 +394,14 @@ const PurchasesScreen: React.FC = () => {
                     <th className="px-6 py-6"></th>
                   </tr>
                 </thead>
-               <tbody className="divide-y divide-white/5">
-                 {items.length > 0 ? items.map((item, idx) => (
+                <tbody className="divide-y divide-white/5">
+                  {items.length > 0 ? items.map((item, idx) => (
                     <tr key={idx} className="hover:bg-white/5 transition-colors">
                       <td className="px-6 py-6 font-bold text-white uppercase">{item.nombre}</td>
                       <td className="px-4 py-6 text-center">
-                        <input 
-                          type="number" 
-                          value={item.cantidad} 
+                        <input
+                          type="number"
+                          value={item.cantidad}
                           className="w-16 bg-black/20 border border-white/10 rounded-lg text-center font-bold py-1"
                           onChange={(e) => {
                             const newItems = [...items];
@@ -398,9 +411,9 @@ const PurchasesScreen: React.FC = () => {
                         />
                       </td>
                       <td className="px-4 py-6 text-center">
-                        <input 
-                          type="number" 
-                          value={item.costo} 
+                        <input
+                          type="number"
+                          value={item.costo}
                           className="w-20 bg-black/20 border border-white/10 rounded-lg text-center font-bold py-1"
                           onChange={(e) => {
                             const newItems = [...items];
@@ -413,9 +426,9 @@ const PurchasesScreen: React.FC = () => {
                         />
                       </td>
                       <td className="px-4 py-6 text-center">
-                        <input 
-                          type="number" 
-                          value={item.margen || 0} 
+                        <input
+                          type="number"
+                          value={item.margen || 0}
                           className="w-16 bg-black/20 border border-white/10 rounded-lg text-center font-bold py-1"
                           onChange={(e) => {
                             const newItems = [...items];
@@ -428,9 +441,9 @@ const PurchasesScreen: React.FC = () => {
                         />
                       </td>
                       <td className="px-4 py-6 text-center">
-                        <input 
-                          type="number" 
-                          value={item.precio_venta || 0} 
+                        <input
+                          type="number"
+                          value={item.precio_venta || 0}
                           className="w-20 bg-black/20 border border-white/10 rounded-lg text-center font-bold py-1 text-[#3498db]"
                           onChange={(e) => {
                             const newItems = [...items];
@@ -449,83 +462,83 @@ const PurchasesScreen: React.FC = () => {
                       </td>
                       <td className="px-6 py-6 text-right">
                         <button onClick={() => removeItem(idx)} className="text-gray-700 hover:text-red-400 transition-colors">
-                         <Trash2 size={18} />
-                       </button>
-                     </td>
-                   </tr>
+                          <Trash2 size={18} />
+                        </button>
+                      </td>
+                    </tr>
                   )) : (
                     <tr>
                       <td colSpan={7} className="px-8 py-20 text-center">
-                       <div className="flex flex-col items-center gap-4 text-gray-600">
-                         <FileText size={48} className="opacity-20" />
-                         <span className="font-black uppercase tracking-widest">No hay items cargados</span>
-                       </div>
-                     </td>
-                   </tr>
-                 )}
-               </tbody>
-             </table>
-           </div>
-          
-          <button 
-            onClick={() => setIsManualModalOpen(true)} 
-            className="w-full h-16 mt-4 border-2 border-dashed border-white/10 rounded-[2.5rem] flex items-center justify-center gap-2 text-gray-500 font-black uppercase tracking-widest hover:border-[#3498db] hover:text-[#3498db] transition-all"
-          >
-            <Plus size={20} /> AÑADIR PRODUCTO MANUALMENTE
-          </button>
-        </div>
-
-        <div className="space-y-6">
-          <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-8 space-y-6">
-            <h3 className="text-xl font-bold">Resumen de Compra</h3>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-2">Proveedor</label>
-                <select value={selectedProvider} onChange={e => setSelectedProvider(e.target.value)} className="w-full bg-black/30 border border-white/10 rounded-2xl py-3 px-4 text-xs font-bold focus:border-[#3498db] outline-none">
-                   <option value="">Seleccionar Proveedor...</option>
-                   {providers.map(p => (
-                     <option key={p.id} value={p.id}>{p.nombre}</option>
-                   ))}
-                </select>
-              </div>
-
-              <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-black text-white uppercase tracking-widest">¿Compra a Crédito?</span>
-                  <span className="text-[8px] text-gray-500 font-bold uppercase">GENERAR CUENTA POR PAGAR</span>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" checked={isCredit} onChange={e => setIsCredit(e.target.checked)} className="sr-only peer" />
-                  <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500"></div>
-                </label>
-              </div>
-
-              <div className="flex justify-between items-center text-gray-400 font-bold uppercase text-[10px] tracking-widest pt-2">
-                <span>Items Totales</span>
-                <span className="text-white">{items.length}</span>
-              </div>
-              
-              <div className="pt-6 border-t border-white/5">
-                <div className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Monto Total a Invertir</div>
-                <div className="text-4xl font-black text-[#2ecc71]">{formatCurrency(total)}</div>
-              </div>
+                        <div className="flex flex-col items-center gap-4 text-gray-600">
+                          <FileText size={48} className="opacity-20" />
+                          <span className="font-black uppercase tracking-widest">No hay items cargados</span>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
 
-            <button onClick={handleSavePurchase} disabled={saving} className="w-full bg-[#3498db] hover:bg-[#2980b9] text-white font-black py-5 rounded-3xl shadow-xl shadow-blue-500/10 transition-all flex items-center justify-center gap-3 mt-4 disabled:opacity-50">
-              {saving ? <Loader2 className="animate-spin" /> : <Save size={20} />} 
-              {saving ? 'PROCESANDO...' : 'GUARDAR E INCREMENTAR STOCK'}
+            <button
+              onClick={() => setIsManualModalOpen(true)}
+              className="w-full h-16 mt-4 border-2 border-dashed border-white/10 rounded-[2.5rem] flex items-center justify-center gap-2 text-gray-500 font-black uppercase tracking-widest hover:border-[#3498db] hover:text-[#3498db] transition-all"
+            >
+              <Plus size={20} /> AÑADIR PRODUCTO MANUALMENTE
             </button>
           </div>
 
-          <div className="bg-[#f1c40f]/10 border border-[#f1c40f]/20 p-6 rounded-[2.5rem]">
-            <h4 className="text-yellow-500 font-black uppercase text-[10px] tracking-widest flex items-center gap-2 mb-2">
-              <Zap size={14} fill="currentColor" /> Consejo de Costos
-            </h4>
-            <p className="text-xs text-white leading-relaxed font-medium">
-              Asegúrate de que los costos cargados hoy no excedan el 5% de la carga anterior para mantener tus margenes de utilidad estables.
-            </p>
+          <div className="space-y-6">
+            <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-8 space-y-6">
+              <h3 className="text-xl font-bold">Resumen de Compra</h3>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-2">Proveedor</label>
+                  <select value={selectedProvider} onChange={e => setSelectedProvider(e.target.value)} className="w-full bg-black/30 border border-white/10 rounded-2xl py-3 px-4 text-xs font-bold focus:border-[#3498db] outline-none">
+                    <option value="">Seleccionar Proveedor...</option>
+                    {providers.map(p => (
+                      <option key={p.id} value={p.id}>{p.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black text-white uppercase tracking-widest">¿Compra a Crédito?</span>
+                    <span className="text-[8px] text-gray-500 font-bold uppercase">GENERAR CUENTA POR PAGAR</span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" checked={isCredit} onChange={e => setIsCredit(e.target.checked)} className="sr-only peer" />
+                    <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500"></div>
+                  </label>
+                </div>
+
+                <div className="flex justify-between items-center text-gray-400 font-bold uppercase text-[10px] tracking-widest pt-2">
+                  <span>Items Totales</span>
+                  <span className="text-white">{items.length}</span>
+                </div>
+
+                <div className="pt-6 border-t border-white/5">
+                  <div className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Monto Total a Invertir</div>
+                  <div className="text-4xl font-black text-[#2ecc71]">{formatCurrency(total)}</div>
+                </div>
+              </div>
+
+              <button onClick={handleSavePurchase} disabled={saving} className="w-full bg-[#3498db] hover:bg-[#2980b9] text-white font-black py-5 rounded-3xl shadow-xl shadow-blue-500/10 transition-all flex items-center justify-center gap-3 mt-4 disabled:opacity-50">
+                {saving ? <Loader2 className="animate-spin" /> : <Save size={20} />}
+                {saving ? 'PROCESANDO...' : 'GUARDAR E INCREMENTAR STOCK'}
+              </button>
+            </div>
+
+            <div className="bg-[#f1c40f]/10 border border-[#f1c40f]/20 p-6 rounded-[2.5rem]">
+              <h4 className="text-yellow-500 font-black uppercase text-[10px] tracking-widest flex items-center gap-2 mb-2">
+                <Zap size={14} fill="currentColor" /> Consejo de Costos
+              </h4>
+              <p className="text-xs text-white leading-relaxed font-medium">
+                Asegúrate de que los costos cargados hoy no excedan el 5% de la carga anterior para mantener tus margenes de utilidad estables.
+              </p>
+            </div>
           </div>
-        </div>
         </div>
       </div>
     </div>

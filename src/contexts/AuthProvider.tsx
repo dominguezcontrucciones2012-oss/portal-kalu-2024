@@ -11,6 +11,7 @@ interface AuthContextType {
   authError: string | null;
   setUser: (user: User | null) => void;
   retryAuth: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -21,6 +22,7 @@ const AuthContext = createContext<AuthContextType>({
   authError: null,
   setUser: () => {},
   retryAuth: () => {},
+  logout: async () => {},
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -49,6 +51,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const logout = async () => {
+    const role = user?.role;
+    // 1. Limpieza total de estado local
+    localStorage.clear();
+    sessionStorage.clear();
+    
+    // Limpieza de caché residual en DOM/URL (Evita el flash de tienda anterior)
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    
+    // 2. Cerrar sesión en Firebase
+    try {
+      await auth.signOut();
+    } catch (e) {
+      console.error("Error signing out:", e);
+    }
+
+    // 3. Redirección dura (Hard reset) dependiendo del rol
+    if (role === 'superadmin' || role === 'dueno' || role === 'admin') {
+      window.location.href = window.location.hostname.includes('admin') ? '/' : '/admin/login';
+    } else {
+      window.location.href = '/';
+    }
+  };
+
   useEffect(() => {
     setAuthError(null);
     // 1. Intentar cargar usuario desde LocalStorage primero (para persistencia de PIN o Mock)
@@ -74,14 +102,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    // Red de seguridad: si Firebase tarda más de 3 segundos, liberar el loading
-    const timer = setTimeout(() => {
-      setLoading(false); // FORZAR LA SALIDA DE LA PANTALLA AZUL
-    }, 3000);
-
-      const unsubscribe = onAuthStateChangedCustom(auth, async (firebaseUser: any) => {
-        clearTimeout(timer);
-        if (firebaseUser) {
+    const unsubscribe = onAuthStateChangedCustom(auth, async (firebaseUser: any) => {
+      if (firebaseUser) {
           // --- CONTROL DE VERIFICACIÓN DE PIN ---
           const pinVerified = localStorage.getItem('kalu_pin_verified') === 'true';
           const savedUser = localStorage.getItem('kalu_current_user');
@@ -220,11 +242,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           localStorage.removeItem('kalu_pin_verified');
         }
         setLoading(false);
-        clearTimeout(timer);
       });
 
       return () => {
-        clearTimeout(timer);
         unsubscribe();
       };
   }, [retryCount]);
@@ -300,7 +320,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isAdmin = user?.role === Role.ADMIN || user?.role === Role.DUENO;
       
   return (
-    <AuthContext.Provider value={{ user, loading, isAdmin, isStaff, authError, setUser, retryAuth }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      loading, 
+      isAdmin, 
+      isStaff, 
+      authError, 
+      setUser, 
+      retryAuth,
+      logout
+    }}>
       {children}
     </AuthContext.Provider>
   );

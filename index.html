@@ -7,7 +7,15 @@
     <meta name="description" content="Gestión profesional de inventario, ventas y clientes." />
     <meta name="google" content="notranslate" />
     <link rel="icon" type="image/svg+xml" href="https://api.dicebear.com/7.x/initials/svg?seed=KN" />
-    <link rel="manifest" href="/manifest.json" />
+    <script>
+      if (window.location.hostname.includes('admin') || (window.location.hostname === 'localhost' && window.location.port === '5174')) {
+        document.title = "KALU ADMIN";
+        document.write('<link rel="manifest" id="app-manifest" href="/manifest-admin.json" />');
+      } else {
+        document.title = "KALU - Quesos y Embutidos";
+        document.write('<link rel="manifest" id="app-manifest" href="/manifest.json" />');
+      }
+    </script>
     <!-- Preconexiones para Firebase (reduce 300-500ms en móvil) -->
     <link rel="preconnect" href="https://firestore.googleapis.com" />
     <link rel="preconnect" href="https://firebase.googleapis.com" />

@@ -177,33 +177,29 @@ const InventoryScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* BOTONES DE CATEGORÍAS */}
-        <div className="flex items-center gap-1.5 overflow-x-auto w-full custom-scrollbar pb-1">
-          <button 
-            onClick={() => setCategoryFilter('TODAS')}
-            className={cn(
-              "px-3 py-1 font-bold text-[10px] sm:text-xs rounded-lg shrink-0 transition-all border",
-              categoryFilter === 'TODAS'
-                ? "bg-cyan-500 text-slate-950 border-cyan-500" 
-                : "bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-700/50"
-            )}
-          >
-            TODAS
-          </button>
-          {categories.filter(c => c !== 'TODAS').map(cat => (
-            <button 
-              key={cat}
-              onClick={() => setCategoryFilter(cat)}
-              className={cn(
-                "px-3 py-1 font-semibold text-[10px] sm:text-xs rounded-lg shrink-0 transition-all border",
-                categoryFilter === cat
-                  ? "bg-cyan-500 text-slate-950 border-cyan-500 font-bold" 
-                  : "bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-700/50"
-              )}
+        {/* FILTRO DE CATEGORÍAS (DROPDOWN) */}
+        <div className="bg-[#112d59]/80 backdrop-blur-md p-2 rounded-xl border border-slate-700/50 shadow-md">
+          <div className="relative w-full flex items-center bg-slate-900/60 rounded-lg border border-slate-700/60 px-3 py-1.5 focus-within:border-cyan-500/60 transition-all">
+            <svg className="w-4 h-4 text-slate-400 shrink-0 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="bg-transparent w-full focus:outline-none text-xs text-white uppercase font-bold tracking-wider cursor-pointer appearance-none"
             >
-              {cat}
-            </button>
-          ))}
+              {categories.map(cat => (
+                <option key={cat} value={cat} className="bg-slate-900 text-white">
+                  {cat}
+                </option>
+              ))}
+            </select>
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
         </div>
       </div>
 

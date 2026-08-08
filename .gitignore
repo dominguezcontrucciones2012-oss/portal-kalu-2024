@@ -15,5 +15,19 @@ service-account.json
 scratch/
 firebase-*.json
  
+# Archivos de Claves y Entorno
+.env
+.env.*
+*.env
+*.pem
+*.key
+
+# Carpetas de Documentos Privados y Legales
 _IDENTIDAD_Y_PROPIEDAD_KALU/
 DOCUMENTOS_REGISTRO_LEGAL_KALU/
+REGISTRO_PROPIEDAD.md
+
+# Build y Dependencias (Asegurados)
+node_modules/
+dist/
+.firebase/

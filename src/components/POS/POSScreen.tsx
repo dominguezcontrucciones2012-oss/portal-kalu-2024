@@ -149,7 +149,13 @@ const POSScreen: React.FC = () => {
     const unsubProducts = subscribeToCollection('products', (data) => setProducts(data));
     const unsubClients = subscribeToCollection('clients', (data) => setClients(data));
     const unsubPaused = subscribeToCollection('ventas_pausadas', (data) => setPausedSales(data));
-    const unsubSales = subscribeToCollection('sales', (data) => setSales(data as Sale[]));
+    
+    // Optimización de lecturas: Solo suscribirse a ventas si la tienda tiene el portal web activo
+    let unsubSales = () => {};
+    if (activeStore?.features?.hasOnlineStore !== false) {
+      unsubSales = subscribeToCollection('sales', (data) => setSales(data as Sale[]));
+    }
+    
     const unsubOpenTabs = subscribeToCollection('open_tabs', (data) => setOpenTabs(data));
     const unsubUsers = subscribeToCollection('users', (data) => {
       setDrivers(data.filter((u: any) => u.role === 'repartidor'));
@@ -194,7 +200,7 @@ const POSScreen: React.FC = () => {
       unsubOpenTabs();
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [cart, totalPaidUSD, totalUSD, selectedClient, isFiado, isPaying, paymentAmounts]); // Dependencies for keyboard actions
+  }, [cart, totalPaidUSD, totalUSD, selectedClient, isFiado, isPaying, paymentAmounts, activeStore?.features?.hasOnlineStore]); // Dependencies for keyboard actions
 
   // Reset payment amounts if cart changes to avoid stuck/incorrect values
   useEffect(() => {
@@ -915,17 +921,19 @@ const POSScreen: React.FC = () => {
                 )}
               </button>
             )}
-            <button 
-              onClick={() => setShowWebOrdersModal(true)}
-              className="flex-1 text-xs font-bold text-cyan-200 bg-cyan-950/40 py-1.5 px-1 whitespace-nowrap rounded-xl hover:bg-cyan-900/50 transition-all uppercase tracking-widest border border-cyan-500/30 flex items-center justify-center gap-1.5 shadow-sm"
-            >
-              <span className="flex items-center gap-1"><span className="text-sm">📦</span> Pedidos Web</span>
-              {(productWebOrders.length + abonoReports.length) > 0 && (
-                <span className="w-4 h-4 bg-cyan-200 text-cyan-900 rounded-full flex items-center justify-center font-black text-[9px] leading-none animate-pulse ml-1">
-                  {productWebOrders.length + abonoReports.length}
-                </span>
-              )}
-            </button>
+            {activeStore?.features?.hasOnlineStore !== false && (
+              <button 
+                onClick={() => setShowWebOrdersModal(true)}
+                className="flex-1 text-xs font-bold text-cyan-200 bg-cyan-950/40 py-1.5 px-1 whitespace-nowrap rounded-xl hover:bg-cyan-900/50 transition-all uppercase tracking-widest border border-cyan-500/30 flex items-center justify-center gap-1.5 shadow-sm"
+              >
+                <span className="flex items-center gap-1"><span className="text-sm">📦</span> Pedidos Web</span>
+                {(productWebOrders.length + abonoReports.length) > 0 && (
+                  <span className="w-4 h-4 bg-cyan-200 text-cyan-900 rounded-full flex items-center justify-center font-black text-[9px] leading-none animate-pulse ml-1">
+                    {productWebOrders.length + abonoReports.length}
+                  </span>
+                )}
+              </button>
+            )}
             <div className="flex -space-x-2">
               {pausedSales.map((s, i) => (
                 <button 

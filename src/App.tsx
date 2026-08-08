@@ -1,5 +1,6 @@
+/// <reference types="vite/client" />
 import React, { Suspense, lazy } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, MemoryRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthProvider';
 import Layout from './components/layout/Layout';
 import { ToastProvider } from './contexts/ToastProvider';
@@ -9,40 +10,45 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 
 const lazyRetry = (componentImport: () => Promise<any>) => {
   return lazy(async () => {
-    const hasRefreshed = JSON.parse(
-      window.sessionStorage.getItem('retry-lazy-refreshed') || 'false'
-    );
-    try {
-      // Add a 15-second timeout to prevent infinite hanging on bad networks
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Chunk load timeout')), 15000);
-      });
-      const component = await Promise.race([componentImport(), timeoutPromise]);
-      window.sessionStorage.setItem('retry-lazy-refreshed', 'false');
-      return component;
-    } catch (error) {
-      if (!hasRefreshed) {
-        window.sessionStorage.setItem('retry-lazy-refreshed', 'true');
-        
-        // Intentar limpiar caché y Service Workers antes de recargar
-        if ('caches' in window) {
-          caches.keys().then(names => {
-            for (let name of names) caches.delete(name);
-          });
-        }
-        
-        window.location.reload();
-        // Fallback agresivo por si reload() es interceptado en iOS PWA
-        setTimeout(() => {
-          window.location.href = window.location.href;
-        }, 500);
+    let retries = 3;
+    let delay = 1000; // start with 1 second delay
 
-        // Ya no devolvemos una promesa infinita, lanzamos el error para que 
-        // caiga en el ErrorBoundary si el reload falla.
-        throw new Error("Forzando recarga por fallo de módulo...");
+    while (retries > 0) {
+      try {
+        // Aumentamos el timeout a 45 segundos para redes móviles lentas (CANTV/Digitel)
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Chunk load timeout')), 45000);
+        });
+        const component = await Promise.race([componentImport(), timeoutPromise]);
+        
+        // Si tiene éxito, reseteamos cualquier bandera de error previo
+        window.sessionStorage.setItem('retry-lazy-refreshed', 'false');
+        return component;
+      } catch (error) {
+        retries--;
+        if (retries === 0) {
+          // Fallback final: Si se acaban los reintentos, ahí sí forzamos recarga
+          const hasRefreshed = JSON.parse(
+            window.sessionStorage.getItem('retry-lazy-refreshed') || 'false'
+          );
+          if (!hasRefreshed) {
+            window.sessionStorage.setItem('retry-lazy-refreshed', 'true');
+            if ('caches' in window) {
+              caches.keys().then(names => {
+                for (let name of names) caches.delete(name);
+              });
+            }
+            window.location.reload();
+            setTimeout(() => { window.location.href = window.location.href; }, 500);
+          }
+          throw error;
+        }
+        // Esperamos antes del siguiente intento
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 2; // backoff exponencial (1s, 2s, 4s)
       }
-      throw error;
     }
+    throw new Error("No se pudo cargar el módulo");
   });
 };
 
@@ -50,20 +56,23 @@ const DashboardScreen = lazyRetry(() => import('./components/Dashboard/Dashboard
 const POSScreen = lazyRetry(() => import('./components/POS/POSScreen'));
 const InventoryScreen = lazyRetry(() => import('./components/Inventory/InventoryScreen'));
 const ClientsScreen = lazyRetry(() => import('./components/Clients/ClientsScreen'));
-const DriversScreen = lazyRetry(() => import('./components/Drivers/DriversScreen'));
-const MorososScreen = lazyRetry(() => import('./components/Clients/MorososScreen'));
-const LedgerScreen = lazyRetry(() => import('./components/Ledger/LedgerScreen'));
 const HistoryScreen = lazyRetry(() => import('./components/History/HistoryScreen'));
 const ReportsScreen = lazyRetry(() => import('./components/Reports/ReportsScreen'));
-const ClientPortal = lazyRetry(() => import('./components/Portal/ClientPortalScreen'));
 const ClosureScreen = lazyRetry(() => import('./components/Account/ClosureScreen'));
 const PurchasesScreen = lazyRetry(() => import('./components/Inventory/PurchasesScreen'));
 const ProvidersScreen = lazyRetry(() => import('./components/Inventory/ProvidersScreen'));
 const ProfileScreen = lazyRetry(() => import('./components/Account/ProfileScreen'));
 const ClientLoginScreen = lazyRetry(() => import('./components/Auth/ClientLoginScreen'));
 const AdminLoginScreen = lazyRetry(() => import('./components/Auth/AdminLoginScreen'));
-const AccountingScreen = lazyRetry(() => import('./components/Ledger/AccountingScreen'));
 const SettingsScreen = lazyRetry(() => import('./components/Account/SettingsScreen'));
+const DirectoryScreen = lazyRetry(() => import('./components/Portal/DirectoryScreen'));
+
+// Premium Components (Stripped in Offline Mode by Rollup Dead Code Elimination)
+const DriversScreen = lazyRetry(() => import('./components/Drivers/DriversScreen'));
+const MorososScreen = lazyRetry(() => import('./components/Clients/MorososScreen'));
+const LedgerScreen = lazyRetry(() => import('./components/Ledger/LedgerScreen'));
+const ClientPortal = lazyRetry(() => import('./components/Portal/ClientPortalScreen'));
+const AccountingScreen = lazyRetry(() => import('./components/Ledger/AccountingScreen'));
 const AIMarketScreen = lazyRetry(() => import('./components/AI/AIMarketScreen'));
 const PublicMarketScreen = lazyRetry(() => import('./components/Market/PublicMarketScreen'));
 const VendorPortalScreen = lazyRetry(() => import('./components/Market/VendorPortalScreen'));
@@ -74,22 +83,50 @@ const DriverPortalScreen = lazyRetry(() => import('./components/Portal/DriverPor
 const SorteoScreen = lazyRetry(() => import('./components/Sorteo/SorteoScreen'));
 const DriverOrClientGate = lazyRetry(() => import('./components/Portal/DriverOrClientGate'));
 const SuperAdminScreen = lazyRetry(() => import('./components/SuperAdmin/SuperAdminScreen'));
-const DirectoryScreen = lazyRetry(() => import('./components/Portal/DirectoryScreen'));
 
 const LoadingFallback = () => (
-  <div className="h-screen w-full bg-slate-900 flex items-center justify-center">
-    <div className="w-12 h-12 border-4 border-white/10 border-t-[#3498db] rounded-full animate-spin" />
+  <div className="h-screen w-full bg-[#0f172a] flex items-center justify-center">
+    <div className="relative w-12 h-12 flex items-center justify-center">
+      <div className="absolute inset-0 animate-[spin_2s_linear_infinite] flex items-center justify-center">
+        <div className="relative w-12 h-12 animate-[explode_1.5s_ease-in-out_infinite]">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3 h-3 bg-emerald-400 rounded-full shadow-[0_0_12px_#34d399]"></div>
+          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3 h-3 bg-emerald-400 rounded-full shadow-[0_0_12px_#34d399]"></div>
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-emerald-400 rounded-full shadow-[0_0_12px_#34d399]"></div>
+          <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-emerald-400 rounded-full shadow-[0_0_12px_#34d399]"></div>
+        </div>
+      </div>
+      <style>{`
+        @keyframes explode {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(0.1); filter: brightness(2) drop-shadow(0 0 15px #34d399); }
+        }
+      `}</style>
+    </div>
   </div>
 );
 
 
 
 
-const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+const adminRoles = ['admin', 'superadmin', 'dueno', 'supervisor', 'cajero'];
+
+const ProtectedRoute = ({ children, allowedRoles }: { children: React.ReactNode, allowedRoles?: string[] }) => {
   const { user } = useAuth();
   if (!user) {
+    const isStrictAdminRoute = allowedRoles && allowedRoles.every(r => adminRoles.includes(r));
+    if (isStrictAdminRoute || window.location.hostname.includes('admin')) {
+      return <Navigate to="/admin/login" replace />;
+    }
     return <Navigate to="/login" replace />;
   }
+  
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    if (user.role === 'superadmin' || user.role === 'dueno') return <Navigate to="/superadmin" replace />;
+    if (user.role === 'cliente') return <Navigate to="/client-portal" replace />;
+    if (user.role === 'repartidor') return <Navigate to="/driver-gate" replace />;
+    return <Navigate to="/dashboard" replace />;
+  }
+  
   return <>{children}</>;
 };
 
@@ -141,114 +178,96 @@ const Root = () => {
   }
 
   if (loading) {
-    return (
-      <div className="h-screen w-full bg-[#0f172a] flex items-center justify-center">
-        <div className="w-12 h-12 border-4 border-white/10 border-t-[#3498db] rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <Routes>
-        <Route path="/" element={<DirectoryScreen />} />
-        <Route path="/tiendas" element={<DirectoryScreen />} />
-        <Route path="/login" element={<ClientLoginScreen />} />
-        <Route path="/admin/login" element={<AdminLoginScreen />} />
-        <Route path="/sentings" element={<AdminLoginScreen />} />
-        <Route path="/catalogo" element={<PublicCatalogScreen />} />
-        <Route path="/sorteo" element={<SorteoScreen />} />
-        {/* FALLBACK: Si entran a una ruta que no existe o están deslogueados, NUNCA forzarlos al /login azul.
-            Deben caer siempre en la PANTALLA 1 (Multitienda) como dicta la secuencia. */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    );
-  }
-
-  // Restringir el acceso de los clientes para que no entren al panel administrativo
-  if (user.role === 'cliente') {
-    return (
-      <Routes>
-        {/* PANTALLA 1 SIEMPRE LIBRE, INCLUSO CON SESIÓN ACTIVA */}
-        <Route path="/" element={<DirectoryScreen />} />
-        <Route path="/tiendas" element={<DirectoryScreen />} />
-        
-        {/* ENVOLTURA PROTEGIDA SIN RUTA BASE QUE SECUESTRE EL '/' */}
-        <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-          <Route path="/client-portal" element={<ClientPortal />} />
-          <Route path="/catalogo" element={<PublicCatalogScreen />} />
-          <Route path="/sorteo" element={<SorteoScreen />} />
-          <Route path="*" element={<Navigate to="/client-portal" replace />} />
-        </Route>
-      </Routes>
-    );
-  }
-
-  // Los repartidores tienen modo dual: entran como cliente por defecto, pero pueden cambiar a su portal
-  if (user.role === 'repartidor') {
-    return (
-      <Routes>
-        {/* PANTALLA 1 SIEMPRE LIBRE, INCLUSO CON SESIÓN ACTIVA */}
-        <Route path="/" element={<DirectoryScreen />} />
-        <Route path="/tiendas" element={<DirectoryScreen />} />
-        
-        <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-          <Route path="/driver-gate" element={<DriverOrClientGate />} />
-          <Route path="/client-portal" element={<ClientPortal />} />
-          <Route path="/catalogo" element={<PublicCatalogScreen />} />
-          <Route path="/repartidor" element={<DriverPortalScreen />} />
-          <Route path="*" element={<Navigate to="/driver-gate" replace />} />
-        </Route>
-      </Routes>
-    );
-  }
-
-  const adminRoles = ['admin', 'superadmin', 'dueno', 'supervisor', 'cajero'];
-  if (!adminRoles.includes(user.role)) {
-    return (
-      <Routes>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    );
+    return <LoadingFallback />;
   }
 
   return (
     <Routes>
+      {/* Public / Hybrid Routes */}
+      <Route path="/" element={
+        !user ? (window.location.hostname.includes('admin') ? <AdminLoginScreen /> : <DirectoryScreen />) :
+        (user.role === 'superadmin' || user.role === 'dueno') ? <Navigate to="/superadmin" replace /> :
+        user.role === 'cliente' ? <DirectoryScreen /> :
+        user.role === 'repartidor' ? <Navigate to="/driver-gate" replace /> :
+        <Navigate to="/dashboard" replace />
+      } />
       <Route path="/tiendas" element={<DirectoryScreen />} />
-      <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-        <Route index element={<DashboardScreen />} />
-        <Route path="pos" element={<POSScreen />} />
-        <Route path="inventory" element={<InventoryScreen />} />
-        <Route path="history" element={<HistoryScreen />} />
-        <Route path="clients" element={<ClientsScreen />} />
-        <Route path="repartidores" element={<DriversScreen />} />
-        <Route path="morosos" element={<MorososScreen />} />
-        <Route path="purchases" element={<PurchasesScreen />} />
-        <Route path="providers" element={<ProvidersScreen />} />
-        <Route path="reports" element={<ReportsScreen />} />
-        <Route path="closure" element={<ClosureScreen />} />
-        <Route path="ai-market" element={<AIMarketScreen />} />
-        <Route path="public-market" element={<PublicMarketScreen />} />
-        <Route path="sorteo" element={<SorteoScreen />} />
-        <Route path="vendor-portal" element={<VendorPortalScreen />} />
-        <Route path="approval" element={<ApprovalScreen />} />
-        <Route path="ledger" element={<LedgerScreen />} />
-        <Route path="accounting" element={<AccountingScreen />} />
-        <Route path="settings" element={<SettingsScreen />} />
-        <Route path="profile" element={<ProfileScreen />} />
-        <Route path="despacho" element={<DispatchScreen />} />
-        <Route path="catalogo" element={<PublicCatalogScreen />} />
-        <Route path="client-portal" element={<ClientPortal />} />
-        <Route path="superadmin" element={user.role === 'superadmin' ? <SuperAdminScreen /> : <Navigate to="/" replace />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="/catalogo" element={<PublicCatalogScreen />} />
+      <Route path="/login" element={
+        user ? (
+          (user.role === 'superadmin' || user.role === 'dueno') ? <Navigate to="/superadmin" replace /> :
+          user.role === 'repartidor' ? <Navigate to="/driver-gate" replace /> :
+          user.role === 'cliente' ? <Navigate to="/client-portal" replace /> :
+          <Navigate to="/dashboard" replace />
+        ) : <ClientLoginScreen />
+      } />
+      <Route path="/admin/login" element={
+        user ? (
+          (user.role === 'superadmin' || user.role === 'dueno') ? <Navigate to="/superadmin" replace /> :
+          <Navigate to="/dashboard" replace />
+        ) : <AdminLoginScreen />
+      } />
+      <Route path="/sentings" element={
+        user ? (
+          (user.role === 'superadmin' || user.role === 'dueno') ? <Navigate to="/superadmin" replace /> :
+          <Navigate to="/dashboard" replace />
+        ) : <AdminLoginScreen />
+      } />
+
+      {/* Isolated Master Route */}
+      <Route path="/superadmin" element={<ProtectedRoute allowedRoles={['superadmin', 'dueno']}><SuperAdminScreen /></ProtectedRoute>} />
+
+      {/* Unified Protected Layout Tree */}
+      <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+        
+        {/* Client & Shared */}
+        <Route path="/client-portal" element={<ProtectedRoute allowedRoles={['cliente', 'repartidor', ...adminRoles]}><ClientPortal /></ProtectedRoute>} />
+        <Route path="/sorteo" element={<SorteoScreen />} />
+        
+        {/* Driver */}
+        <Route path="/driver-gate" element={<ProtectedRoute allowedRoles={['repartidor', ...adminRoles]}><DriverOrClientGate /></ProtectedRoute>} />
+        <Route path="/repartidor" element={<ProtectedRoute allowedRoles={['repartidor', ...adminRoles]}><DriverPortalScreen /></ProtectedRoute>} />
+
+        {/* Admin only */}
+        <Route path="/dashboard" element={<ProtectedRoute allowedRoles={adminRoles}><DashboardScreen /></ProtectedRoute>} />
+        <Route path="/pos" element={<ProtectedRoute allowedRoles={adminRoles}><POSScreen /></ProtectedRoute>} />
+        <Route path="/inventory" element={<ProtectedRoute allowedRoles={adminRoles}><InventoryScreen /></ProtectedRoute>} />
+        <Route path="/history" element={<ProtectedRoute allowedRoles={adminRoles}><HistoryScreen /></ProtectedRoute>} />
+        <Route path="/clients" element={<ProtectedRoute allowedRoles={adminRoles}><ClientsScreen /></ProtectedRoute>} />
+        <Route path="/repartidores" element={<ProtectedRoute allowedRoles={adminRoles}><DriversScreen /></ProtectedRoute>} />
+        <Route path="/morosos" element={<ProtectedRoute allowedRoles={adminRoles}><MorososScreen /></ProtectedRoute>} />
+        <Route path="/purchases" element={<ProtectedRoute allowedRoles={adminRoles}><PurchasesScreen /></ProtectedRoute>} />
+        <Route path="/providers" element={<ProtectedRoute allowedRoles={adminRoles}><ProvidersScreen /></ProtectedRoute>} />
+        <Route path="/reports" element={<ProtectedRoute allowedRoles={adminRoles}><ReportsScreen /></ProtectedRoute>} />
+        <Route path="/closure" element={<ProtectedRoute allowedRoles={adminRoles}><ClosureScreen /></ProtectedRoute>} />
+        <Route path="/ai-market" element={<ProtectedRoute allowedRoles={adminRoles}><AIMarketScreen /></ProtectedRoute>} />
+        <Route path="/public-market" element={<ProtectedRoute allowedRoles={adminRoles}><PublicMarketScreen /></ProtectedRoute>} />
+        <Route path="/vendor-portal" element={<ProtectedRoute allowedRoles={adminRoles}><VendorPortalScreen /></ProtectedRoute>} />
+        <Route path="/approval" element={<ProtectedRoute allowedRoles={adminRoles}><ApprovalScreen /></ProtectedRoute>} />
+        <Route path="/ledger" element={<ProtectedRoute allowedRoles={adminRoles}><LedgerScreen /></ProtectedRoute>} />
+        <Route path="/accounting" element={<ProtectedRoute allowedRoles={adminRoles}><AccountingScreen /></ProtectedRoute>} />
+        <Route path="/settings" element={<ProtectedRoute allowedRoles={adminRoles}><SettingsScreen /></ProtectedRoute>} />
+        <Route path="/profile" element={<ProtectedRoute allowedRoles={adminRoles}><ProfileScreen /></ProtectedRoute>} />
+        <Route path="/despacho" element={<ProtectedRoute allowedRoles={adminRoles}><DispatchScreen /></ProtectedRoute>} />
+
+        {/* Catch-all Protectivo */}
+        <Route path="*" element={
+          !user ? <Navigate to="/login" replace /> :
+          (user.role === 'superadmin' || user.role === 'dueno') ? <Navigate to="/superadmin" replace /> :
+          user.role === 'cliente' ? <Navigate to="/client-portal" replace /> :
+          user.role === 'repartidor' ? <Navigate to="/driver-gate" replace /> :
+          <Navigate to="/dashboard" replace />
+        } />
       </Route>
     </Routes>
   );
 };
 
 export default function App() {
+  const Router = BrowserRouter;
+
   return (
-    <BrowserRouter>
+    <Router>
       <AuthProvider>
         <ToastProvider>
           <ErrorBoundary>
@@ -258,6 +277,6 @@ export default function App() {
           </ErrorBoundary>
         </ToastProvider>
       </AuthProvider>
-    </BrowserRouter>
+    </Router>
   );
 }

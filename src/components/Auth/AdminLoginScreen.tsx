@@ -8,6 +8,25 @@ import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, Mail, Fingerprint } from 'lucide-react';
 import { isBiometricSupported, verifyBiometrics, isBiometricsEnabledForUser, getBiometricLastUserEmail, removeBiometrics } from '../../lib/biometrics';
 
+const AdminLoader = () => (
+  <div className="relative w-6 h-6 flex items-center justify-center mx-auto">
+    <div className="absolute inset-0 animate-[spin_2s_linear_infinite] flex items-center justify-center">
+      <div className="relative w-6 h-6 animate-[explode_1.5s_ease-in-out_infinite]">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-emerald-400 rounded-full shadow-[0_0_8px_#34d399]"></div>
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-2 h-2 bg-emerald-400 rounded-full shadow-[0_0_8px_#34d399]"></div>
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-2 h-2 bg-emerald-400 rounded-full shadow-[0_0_8px_#34d399]"></div>
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 bg-emerald-400 rounded-full shadow-[0_0_8px_#34d399]"></div>
+      </div>
+    </div>
+    <style>{`
+      @keyframes explode {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(0.1); filter: brightness(2) drop-shadow(0 0 10px #34d399); }
+      }
+    `}</style>
+  </div>
+);
+
 const AdminLoginScreen: React.FC = () => {
   const { setUser } = useAuth();
   const navigate = useNavigate();
@@ -25,6 +44,15 @@ const AdminLoginScreen: React.FC = () => {
 
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutTimer, setLockoutTimer] = useState(0);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const directStore = params.get('store');
+    if (directStore) {
+      localStorage.setItem('activeStoreId', directStore);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -125,7 +153,11 @@ const AdminLoginScreen: React.FC = () => {
 
       localStorage.setItem('kalu_current_user', JSON.stringify(fullUser));
       setUser(fullUser as any);
-      window.location.href = '/';
+      if (fullUser.role === 'superadmin') {
+        navigate('/superadmin', { replace: true });
+      } else {
+        navigate('/dashboard', { replace: true });
+      }
     } else {
       if (!auto) setError("Huella no reconocida. Usa tu PIN.");
       setLoading(false);
@@ -146,7 +178,6 @@ const AdminLoginScreen: React.FC = () => {
       const superAdmins = ['dominguezcontrucciones2012@gmail.com', 'dominguezconstrucciones2012@gmail.com', 'domingueconstrucciones@gmail.com', 'dominguezconstrucciones@gmail.com'];
       if (superAdmins.includes(userEmail)) {
         localStorage.setItem('kalu_pin_verified', 'true');
-        window.location.href = '/admin/dashboard';
         return;
       }
 
@@ -176,7 +207,6 @@ const AdminLoginScreen: React.FC = () => {
         const bioResult = await verifyBiometrics(userEmail);
         if (bioResult.success) {
           localStorage.setItem('kalu_pin_verified', 'true');
-          window.location.href = '/admin/dashboard';
           return;
         }
       }
@@ -284,6 +314,7 @@ const AdminLoginScreen: React.FC = () => {
           method: 'pin'
         };
         localStorage.setItem('kalu_current_user', JSON.stringify(fullUser));
+        setUser(fullUser as any);
         if (userDocData.storeId) {
           localStorage.setItem('activeStoreId', userDocData.storeId);
         }
@@ -296,7 +327,6 @@ const AdminLoginScreen: React.FC = () => {
             await signInAnonymously(auth);
           }
         }
-        window.location.href = '/admin/dashboard';
         return;
       }
       
@@ -325,7 +355,7 @@ const AdminLoginScreen: React.FC = () => {
           <img 
             src="/logo.jpg?v=2027" 
             alt="Mercado San Juan" 
-            className="w-10 h-10 rounded-full object-cover flex-shrink-0 shadow-sm mx-auto mb-4"
+            className="w-20 h-20 rounded-full object-cover flex-shrink-0 shadow-lg mx-auto mb-4 border-2 border-emerald-500"
           />
           <h1 className="text-3xl font-black uppercase tracking-widest text-emerald-400">KALU ADMIN</h1>
           <p className="text-gray-400 mt-2 text-sm uppercase font-bold tracking-widest">Portal Administrativo Exclusivo</p>
@@ -345,9 +375,13 @@ const AdminLoginScreen: React.FC = () => {
 
         {stepLogin === 1 ? (
           <div className="space-y-4">
-            <button type="button" onClick={handleGoogleLogin} disabled={loading} className="w-full bg-white text-gray-900 py-4 rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-gray-100 transition-colors shadow-md">
-              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-6 h-6" alt="Google" />
-              Continuar con Google
+            <button type="button" onClick={handleGoogleLogin} disabled={loading} className="w-full bg-white text-gray-900 py-4 rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-gray-100 transition-colors shadow-md group">
+              {loading && isGoogleLoginActiveRef.current ? <AdminLoader /> : (
+                <>
+                  <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-6 h-6 group-hover:scale-110 transition-transform" alt="Google" />
+                  Continuar con Google
+                </>
+              )}
             </button>
             
             <div className="relative py-2">
@@ -360,8 +394,8 @@ const AdminLoginScreen: React.FC = () => {
                 <label className="block text-slate-400 text-sm font-bold mb-2 ml-1">Correo Electrónico</label>
                 <input type="email" placeholder="ejemplo@empresa.com" value={emailOrCedula} onChange={e => setEmailOrCedula(e.target.value)} className="w-full bg-black/50 border border-slate-700 rounded-xl p-4 text-white placeholder-slate-600 outline-none focus:border-emerald-500 transition-colors" required />
               </div>
-              <button type="submit" disabled={loading} className="w-full bg-emerald-600 hover:bg-emerald-500 transition-colors text-white py-4 rounded-xl font-bold shadow-lg shadow-emerald-600/20">
-                {loading ? 'Verificando...' : 'Siguiente'}
+              <button type="submit" disabled={loading} className="w-full bg-emerald-600 hover:bg-emerald-500 transition-colors text-white py-4 rounded-xl font-bold shadow-lg shadow-emerald-600/20 disabled:opacity-50 h-[56px] flex items-center justify-center">
+                {loading && !isGoogleLoginActiveRef.current ? <AdminLoader /> : 'Siguiente'}
               </button>
             </form>
             
@@ -387,8 +421,8 @@ const AdminLoginScreen: React.FC = () => {
               <p className="font-bold text-emerald-400">{emailOrCedula}</p>
             </div>
             <input type="password" placeholder="PIN Secreto" maxLength={6} value={pin} onChange={e => setPin(e.target.value)} disabled={lockoutTimer > 0} className="w-full bg-black/50 border border-slate-700 rounded-xl p-4 text-white text-center text-2xl tracking-[1em] outline-none focus:border-emerald-500 disabled:opacity-50" required />
-            <button type="submit" disabled={loading || pin.length !== 6 || lockoutTimer > 0} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-4 rounded-xl font-bold transition-colors disabled:opacity-50">
-              {loading ? 'Entrando...' : 'Autorizar Ingreso'}
+            <button type="submit" disabled={loading || pin.length !== 6 || lockoutTimer > 0} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-4 rounded-xl font-bold transition-colors disabled:opacity-50 h-[56px] flex items-center justify-center">
+              {loading && !isGoogleLoginActiveRef.current ? <AdminLoader /> : 'Autorizar Ingreso'}
             </button>
             {biometricSupported && isBiometricsEnabledForUser(emailOrCedula) && (
               <button type="button" onClick={() => handleBiometricUnlock(false)} className="w-full bg-emerald-500/10 text-emerald-400 py-4 rounded-xl font-bold flex justify-center gap-2 mt-4">

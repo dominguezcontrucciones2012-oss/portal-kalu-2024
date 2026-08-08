@@ -21,7 +21,8 @@ export interface User {
 
 export interface StoreFeatures {
   hasOnlineStore: boolean;
-  hasAI: boolean;
+  hasAISales?: boolean;
+  hasAIPurchases?: boolean;
   hasWhatsApp: boolean;
   hasVIPCredit: boolean;
   hasPOS: boolean;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Package, MessageCircle, Printer, CheckCircle, Check, Clock, Truck, X, AlertTriangle, ScanLine, ArrowLeft } from 'lucide-react';
-import { subscribeToCollection, updateDocument, getLatestTasa, getAppConfig, getDocument, getActiveStoreId } from '../../lib/dbUtils';
+import { subscribeToCollection, subscribeToActiveDispatch, updateDocument, getLatestTasa, getAppConfig, getDocument, getActiveStoreId } from '../../lib/dbUtils';
 import { formatCurrency, parseDate } from '../../lib/utils';
 import { useToast } from '../../contexts/ToastProvider';
 import { useAuth } from '../../contexts/AuthProvider';
@@ -32,11 +32,11 @@ export default function DispatchScreen() {
     // Cargar tasa actual para clculos
     getLatestTasa().then(setTasaActual).catch(console.error);
 
-    const unsubOrders = subscribeToCollection('sales', (data) => {
-      setAllSales(data);
-      // Filtrar solo pedidos web pendientes o listos
+    const unsubOrders = subscribeToActiveDispatch((data) => {
+      setAllSales(data); // Solo contiene activas, lo cual es perfecto para el robot
+      // Filtrar (ya viene filtrado, solo validamos por si acaso) y ordenar
       const webOrders = data.filter((s: any) => 
-        (s.status_pedido === 'pendiente' || s.status_pedido === 'listo' || s.status_pedido === 'en_camino' || s.status_pedido === 'verificando_pago' || s.status_pedido === 'efectivo_en_ruta')
+        (s.status_pedido === 'pendiente' || s.status_pedido === 'listo' || s.status_pedido === 'preparado' || s.status_pedido === 'en_camino' || s.status_pedido === 'verificando_pago' || s.status_pedido === 'efectivo_en_ruta')
       );
       // Ordenar por fecha descendente
       webOrders.sort((a, b) => parseDate(b.createdAt || b.fecha).getTime() - parseDate(a.createdAt || a.fecha).getTime());
@@ -163,6 +163,9 @@ export default function DispatchScreen() {
         gainNode.connect(audioContext.destination);
         oscillator.start();
         oscillator.stop(audioContext.currentTime + 0.5);
+       if (orders.filter(o => o.status_pedido === 'pendiente' || o.status_pedido === 'verificando_pago' || o.status_pedido === 'efectivo_en_ruta').length > 0) {
+        // setHasUnseenOrders(true);
+      }
       } catch (e) {
         console.log("No se pudo reproducir audio", e);
       }
@@ -173,10 +176,13 @@ export default function DispatchScreen() {
     try {
       const updateData: any = { status_pedido: 'listo' };
       let generatedPin = '';
+      let generatedClientPin = '';
       if (repartidorId) {
         generatedPin = Math.floor(1000 + Math.random() * 9000).toString();
+        generatedClientPin = Math.floor(1000 + Math.random() * 9000).toString();
         updateData.repartidor_id = repartidorId;
         updateData.pin_repartidor = generatedPin;
+        updateData.pin_cliente = generatedClientPin;
       }
       await updateDocument('sales', id, updateData);
       
@@ -215,7 +221,7 @@ export default function DispatchScreen() {
   const handleApprovePayment = async (order: any) => {
     try {
       const updateData: any = {
-        status_pedido: order.tipo_entrega === 'delivery' ? 'listo' : 'entregado',
+        status_pedido: order.tipo_entrega === 'delivery' ? 'en_camino' : 'entregado',
         pagada: true
       };
       
@@ -227,29 +233,7 @@ export default function DispatchScreen() {
       
       await updateDocument('sales', order.id, updateData);
 
-      // Si es delivery y tiene repartidor, le avisamos que ya está pago y listo
-      if (order.tipo_entrega === 'delivery' && order.repartidor_id) {
-        try {
-          const config = await getAppConfig();
-          const driver = drivers.find(d => d.id === order.repartidor_id);
-          if (config && config.n8n_webhook_url && driver && driver.telefono) {
-            fetch(config.n8n_webhook_url, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                event: 'order_assigned', // El mismo evento para avisarle al bot
-                order_id: order.id,
-                driver_name: driver.username,
-                driver_phone: driver.telefono,
-                client_name: order.nombre_cliente || 'Cliente',
-                total: order.total_usd || 0
-              })
-            }).catch(err => console.error("Error notifying n8n:", err));
-          }
-        } catch (e) {
-          console.error("Error triggering webhook for driver:", e);
-        }
-      }
+      // Elimina notificación webhook aquí para no reiniciar el estado del bot
       addToast('success', 'Pago aprobado. Pedido completado.');
     } catch (e) {
       addToast('error', 'Error al aprobar pago');
@@ -399,7 +383,7 @@ export default function DispatchScreen() {
           <p style="text-align:center;">--- LISTO PARA ENTREGAR ---</p>
           <script>
             window.onload = () => { window.print(); window.close(); }
-          </script>
+          ${String.fromCharCode(60,47,115,99,114,105,112,116,62)}
         </body>
       </html>
     `;
@@ -540,7 +524,7 @@ export default function DispatchScreen() {
                       : order.status_pedido === 'efectivo_en_ruta'
                       ? 'bg-orange-600/20 text-orange-300 border-orange-600/30 animate-pulse'
                       : order.status_pedido === 'en_camino'
-                      ? 'bg-purple-500/20 text-purple-400 border-purple-500/30 animate-pulse'
+                      ? 'bg-purple-500/20 text-purple-400 border-purple-500/30'
                       : 'bg-green-500/20 text-green-400 border-green-500/30'
                   }`}>
                     {order.status_pedido === 'pendiente' ? (order.tipo_entrega === 'delivery' && !order.repartidor_id ? '⚠️ ESPERANDO REPARTIDOR' : 'Pte. Empacar') : order.status_pedido === 'verificando_pago' ? 'Verificando Pago' : order.status_pedido === 'efectivo_en_ruta' ? 'Efectivo en Ruta' : order.status_pedido === 'en_camino' ? '🚀 EN CAMINO' : '¡LISTO!'}

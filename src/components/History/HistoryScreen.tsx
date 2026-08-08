@@ -12,7 +12,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { cn, formatCurrency, exportToCSV, parseDate } from '../../lib/utils';
-import { subscribeToCollection } from '../../lib/dbUtils';
+import { subscribeToCollection, fetchPaginatedSales } from '../../lib/dbUtils';
 import { type Sale } from '../../types';
 import { motion } from 'motion/react';
 import SaleDetailsModal from './SaleDetailsModal';
@@ -28,6 +28,9 @@ const HistoryScreen: React.FC = () => {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [sales, setSales] = useState<Sale[]>([]);
+  const [lastVisible, setLastVisible] = useState<any>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
 
   const [clients, setClients] = useState<any[]>([]);
@@ -38,16 +41,47 @@ const HistoryScreen: React.FC = () => {
 
   React.useEffect(() => {
     const unsubClients = subscribeToCollection('clients', (data) => setClients(data));
-    const unsubSales = subscribeToCollection('sales', (data) => {
-      // Sort by date descending
-      const sorted = [...data].sort((a, b) => parseDate(b.createdAt || b.fecha).getTime() - parseDate(a.createdAt || a.fecha).getTime());
-      setSales(sorted);
-    });
+    
+    const loadInitialSales = async () => {
+      try {
+        const res = await fetchPaginatedSales(50);
+        setSales(res.docs);
+        setLastVisible(res.lastVisible);
+        setHasMore(res.docs.length === 50);
+      } catch (e) {
+        console.error("Error fetching initial sales:", e);
+      }
+    };
+    loadInitialSales();
+    
     return () => {
       unsubClients();
-      unsubSales();
     };
   }, []);
+
+  const handleLoadMore = async () => {
+    if (!lastVisible || loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const res = await fetchPaginatedSales(50, lastVisible);
+      setSales(prev => {
+        const newSales = [...prev];
+        // Evitar duplicados si hay cruce
+        res.docs.forEach(doc => {
+          if (!newSales.find(s => s.id === doc.id)) {
+            newSales.push(doc);
+          }
+        });
+        return newSales;
+      });
+      setLastVisible(res.lastVisible);
+      if (res.docs.length < 50) setHasMore(false);
+    } catch (e) {
+      console.error(e);
+      addToast('error', 'Error cargando más ventas');
+    }
+    setLoadingMore(false);
+  };
 
   const filteredSales = sales.filter(sale => {
     const saleDate = parseDate(sale.createdAt || sale.fecha);
@@ -266,6 +300,18 @@ const HistoryScreen: React.FC = () => {
           </motion.div>
         ))}
       </div>
+
+      {hasMore && (
+        <div className="flex justify-center mt-6">
+          <button
+            onClick={handleLoadMore}
+            disabled={loadingMore}
+            className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-8 rounded-full border border-slate-700 transition-all shadow-lg flex items-center gap-2"
+          >
+            {loadingMore ? 'Cargando...' : 'Cargar más resultados'}
+          </button>
+        </div>
+      )}
 
       <SaleDetailsModal 
         sale={selectedSale} 

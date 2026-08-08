@@ -1,5 +1,18 @@
 {
   "projects": {
     "default": "kalu-queso-sanjuam"
-  }
+  },
+  "targets": {
+    "kalu-queso-sanjuam": {
+      "hosting": {
+        "clientes": [
+          "kalu-queso-sanjuam"
+        ],
+        "admin": [
+          "admin-kalu"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

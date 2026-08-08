@@ -53,7 +53,8 @@ export default function DirectoryScreen() {
   };
 
   const filteredStores = stores.filter(store =>
-    store.name.toLowerCase().includes(searchTerm.toLowerCase())
+    store.name.toLowerCase().includes(searchTerm.toLowerCase()) && 
+    store.features?.hasOnlineStore !== false
   );
 
   return (

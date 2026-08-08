@@ -27,11 +27,11 @@ import {
   ResponsiveContainer 
 } from 'recharts';
 import { cn, formatCurrency, parseDate } from '../../lib/utils';
-import { getAppConfig, subscribeToCollection, getActiveStoreId, updateDocument } from '../../lib/dbUtils';
+import { getAppConfig, subscribeToCollection, subscribeToRecentSales, getActiveStoreId, updateDocument } from '../../lib/dbUtils';
 import { updateAppConfig } from '../../lib/dbUtils';
 import { type Product, type Sale } from '../../types';
 import QRCode from 'react-qr-code';
-import { doc, updateDoc, deleteDoc, getDocs, query, collection, where } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc, getDocs, getDoc, query, collection, where } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 
 const DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
@@ -99,7 +99,7 @@ const DashboardScreen: React.FC = () => {
 
   useEffect(() => {
     const unsubProducts = subscribeToCollection('products', (data) => setProducts(data));
-    const unsubSales = subscribeToCollection('sales', (data) => {
+    const unsubSales = subscribeToRecentSales(30, (data) => {
       setSales(data);
       setLoading(false);
     });
@@ -170,23 +170,51 @@ const DashboardScreen: React.FC = () => {
   };
 
   const handleResetData = async () => {
-    if (!window.confirm("¿Seguro que quieres borrar TODA la contabilidad? (Ventas, cierres, saldos de clientes y productores)")) return;
+    if (!window.confirm("¿Seguro que quieres borrar TODA la contabilidad y devolver el stock a su estado inicial? (Ventas, cierres, saldos a 0)")) return;
     try {
-      // 1. Reset client balances (only for the active store wallet)
+      const activeStoreId = getActiveStoreId();
+      if (!activeStoreId) {
+        alert("Error: No hay tienda activa");
+        return;
+      }
+      
+      const { updateDocument } = await import('../../lib/dbUtils');
+      
+      // 1. Restaurar stock desde las ventas realizadas
+      const qSales = query(collection(db, 'sales'), where('storeId', '==', activeStoreId));
+      const snapSales = await getDocs(qSales);
+      for (const saleDoc of snapSales.docs) {
+        const saleData = saleDoc.data();
+        if (saleData.cart && Array.isArray(saleData.cart)) {
+          for (const item of saleData.cart) {
+            if (item.product && item.product.id) {
+              const productRef = doc(db, 'products', item.product.id);
+              const pDoc = await getDoc(productRef);
+              if (pDoc.exists()) {
+                const currentStock = pDoc.data().stock || 0;
+                await updateDoc(productRef, { stock: currentStock + (item.cantidad || 0) });
+              }
+            }
+          }
+        }
+      }
+
+      // 2. Reset client balances (saldos a 0 en la billetera de esta tienda)
+      // Como los clientes son globales, debemos recorrerlos todos y updateDocument se encarga de modificar solo la wallet local
       const qClients = query(collection(db, 'clients'));
       const snapClients = await getDocs(qClients);
       for (const d of snapClients.docs) {
         await updateDocument('clients', d.id, { saldo_usd: 0, puntos: 0 });
       }
 
-      // 2. Reset user balances (productores/repartidores) solo para esta tienda
+      // 3. Reset user balances (productores/repartidores)
       const qUsers = query(collection(db, 'users'));
       const snapUsers = await getDocs(qUsers);
       for (const d of snapUsers.docs) {
         await updateDocument('users', d.id, { saldo_pendiente_usd: 0 });
       }
 
-      // 3. Reset collections
+      // 4. Reset collections
       const collectionsToDelete = [
         'sales', 
         'cierres_caja', 
@@ -198,16 +226,18 @@ const DashboardScreen: React.FC = () => {
         'ingresos_caja',
         'retiros_caja',
         'pagos_fiados',
-        'transacciones'
+        'transacciones',
+        'open_tabs'
       ];
 
       for (const col of collectionsToDelete) {
-         const qCol = query(collection(db, col), where('storeId', '==', getActiveStoreId()));
+         const qCol = query(collection(db, col), where('storeId', '==', activeStoreId));
          const snap = await getDocs(qCol);
-         snap.forEach(d => deleteDoc(doc(db, col, d.id)));
+         const deletePromises = snap.docs.map(d => deleteDoc(doc(db, col, d.id)));
+         await Promise.all(deletePromises);
       }
       
-      alert("¡Listo! Toda la contabilidad ha sido borrada desde cero.");
+      alert("¡Listo! Toda la contabilidad ha sido borrada, los saldos están en 0 y el inventario ha sido devuelto a su estado inicial.");
       window.location.reload();
     } catch (e: any) {
       console.error(e);
@@ -410,7 +440,7 @@ const DashboardScreen: React.FC = () => {
                         setTimeout(() => {
                             window.print();
                         }, 800);
-                    </script>
+                    ${String.fromCharCode(60,47,115,99,114,105,112,116,62)}
                 </body>
             </html>
         `);
@@ -432,7 +462,7 @@ const DashboardScreen: React.FC = () => {
         <html>
           <head>
             <title>Imprimir Carnets</title>
-            <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.0/dist/JsBarcode.all.min.js"></script>
+            <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.0/dist/JsBarcode.all.min.js">${String.fromCharCode(60,47,115,99,114,105,112,116,62)}
             <style>
               body { font-family: 'Segoe UI', Arial, sans-serif; display: flex; flex-wrap: wrap; gap: 30px; padding: 40px; justify-content: center; background: #fff; margin: 0; }
               .carnet { 
@@ -508,9 +538,9 @@ const DashboardScreen: React.FC = () => {
               `).join('')}
               
               setTimeout(() => {
-                window.print();
-              }, 1000);
-            </script>
+                JsBarcode(".barcode").init();
+                setTimeout(() => window.print(), 800);
+            ${String.fromCharCode(60,47,115,99,114,105,112,116,62)}
           </body>
         </html>
       `);
@@ -814,20 +844,20 @@ const DashboardScreen: React.FC = () => {
           </div>
           
           <div className="bg-[#1e293b] border border-blue-500/30 p-6 rounded-3xl flex flex-col md:flex-row items-center justify-between shadow-2xl gap-6">
-            <div>
-              <h3 className="text-sm font-black text-white uppercase tracking-wider mb-2">📲 Código QR del Catálogo</h3>
-              <p className="text-[10px] text-gray-400 font-bold leading-relaxed max-w-sm mb-4">Muestra o imprime este código QR en formato cartel para que tus clientes puedan entrar al catálogo público directamente desde sus celulares sin necesidad de descargar ninguna aplicación.</p>
-              <button 
-                onClick={handlePrintQR}
-                className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-4 py-2 rounded-xl transition-all shadow-lg shadow-blue-500/30 flex items-center gap-2"
-              >
-                <span>🖨️ Imprimir / Guardar en PDF</span>
-              </button>
+              <div>
+                <h3 className="text-sm font-black text-white uppercase tracking-wider mb-2">📲 Código QR del Catálogo</h3>
+                <p className="text-[10px] text-gray-400 font-bold leading-relaxed max-w-sm mb-4">Muestra o imprime este código QR en formato cartel para que tus clientes puedan entrar al catálogo público directamente desde sus celulares sin necesidad de descargar ninguna aplicación.</p>
+                <button 
+                  onClick={handlePrintQR}
+                  className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-4 py-2 rounded-xl transition-all shadow-lg shadow-blue-500/30 flex items-center gap-2"
+                >
+                  <span>🖨️ Imprimir / Guardar en PDF</span>
+                </button>
+              </div>
+              <div className="bg-white p-3 rounded-2xl shadow-xl hover:scale-105 transition-transform cursor-pointer" title="Abrir catálogo" onClick={() => window.open(window.location.origin + '/catalogo', '_blank')}>
+                <QRCode id="qr-code-svg" value={`${window.location.origin}/catalogo`} size={100} level="H" />
+              </div>
             </div>
-            <div className="bg-white p-3 rounded-2xl shadow-xl hover:scale-105 transition-transform cursor-pointer" title="Abrir catálogo" onClick={() => window.open(window.location.origin + '/catalogo', '_blank')}>
-              <QRCode id="qr-code-svg" value={`${window.location.origin}/catalogo`} size={100} level="H" />
-            </div>
-          </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Panel de Creación */}

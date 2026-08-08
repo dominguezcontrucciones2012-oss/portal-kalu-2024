@@ -6,27 +6,10 @@ import { auth } from '../../lib/firebase';
 
 export default function DriverOrClientGate() {
   const navigate = useNavigate();
-  const { user, setUser } = useAuth();
+  const { user, logout } = useAuth();
 
   const handleLogout = async () => {
-    try {
-      const storeParam = new URLSearchParams(window.location.search).get('store');
-      const savedStore = localStorage.getItem('activeStoreId');
-      const storeToKeep = storeParam || savedStore || 'kalu-queso-sanjuan';
-
-      setUser(null);
-      localStorage.removeItem('kalu_current_user');
-      localStorage.removeItem('kalu_remembered_user');
-      localStorage.removeItem('kalu_pin_verified');
-      localStorage.removeItem('kalu_bio_last_user_email');
-      
-      // Redirigir a Multitienda
-      window.history.replaceState(null, '', '/');
-      await auth.signOut();
-      window.location.reload();
-    } catch (e) {
-      console.error(e);
-    }
+    logout();
   };
 
   return (

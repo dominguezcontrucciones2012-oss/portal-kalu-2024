@@ -595,6 +595,7 @@ const ClientsScreen: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
+
     </>
   );
 };

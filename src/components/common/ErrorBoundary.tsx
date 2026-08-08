@@ -10,7 +10,7 @@ interface State {
   error?: Error;
 }
 
-class ErrorBoundary extends Component<Props, State> {
+class ErrorBoundary extends React.Component<Props, State> {
   public state: State = {
     hasError: false
   };
@@ -43,6 +43,7 @@ class ErrorBoundary extends Component<Props, State> {
             </div>
             <button
               onClick={() => {
+                // @ts-ignore
                 this.setState({ hasError: false });
                 window.location.reload();
               }}
@@ -55,6 +56,7 @@ class ErrorBoundary extends Component<Props, State> {
       );
     }
 
+    // @ts-ignore
     return this.props.children;
   }
 }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Truck, MapPin, Phone, CheckCircle, Camera, UploadCloud, X, ArrowLeft, Image as ImageIcon, MessageCircle, AlertTriangle, LogOut, ShoppingCart } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthProvider';
-import { subscribeToCollection, updateDocument, getDocument, addDocument } from '../../lib/dbUtils';
+import { subscribeToCollection, subscribeToActiveDriverSales, updateDocument, getDocument, addDocument } from '../../lib/dbUtils';
 import { auth } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastProvider';
 import { formatCurrency, compressImage } from '../../lib/utils';
@@ -14,6 +14,8 @@ export default function DriverPortalScreen() {
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState<'pendientes' | 'entregados'>('pendientes');
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
+  const [orderToValidatePin, setOrderToValidatePin] = useState<any | null>(null);
+  const [orderToRetire, setOrderToRetire] = useState<any | null>(null);
   const { addToast } = useToast();
   const navigate = useNavigate();
   
@@ -91,9 +93,9 @@ export default function DriverPortalScreen() {
       if (isMounted) setIsDataLoaded(true);
     }, 5000);
 
-    const unsub = subscribeToCollection('sales', async (data) => {
+    const unsub = subscribeToActiveDriverSales(user.id, async (data) => {
       try {
-        const myOrders = data.filter((s: any) => s.repartidor_id === user.id);
+        const myOrders = data; // Ya vienen filtradas por repartidor_id y status_pedido desde Firebase
         
         // Notificar si hay un pedido nuevo
         const currentOrderIds = myOrders.map((o: any) => o.id);
@@ -248,8 +250,18 @@ export default function DriverPortalScreen() {
       }
     setSelectedOrder(null);
   } catch (e: any) {
+    console.error("Error confirming order:", e);
+    addToast('error', 'Hubo un error al procesar la entrega.');
+  }
+};
+
+const handleFinalDelivery = async (orderId: string) => {
+  try {
+    await updateDocument('sales', orderId, { status_pedido: 'entregado' });
+    addToast('success', 'Pedido entregado al cliente.');
+  } catch (e) {
     console.error(e);
-    addToast('error', 'Error: ' + (e.message || 'No se pudo subir'));
+    addToast('error', 'Error al finalizar la entrega');
   }
 };
 
@@ -295,6 +307,7 @@ if (!user || user.role !== 'repartidor') {
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
+  // Filtrar pedidos que no estén completamente cerrados
   const pendingOrders = orders.filter(o => o.status_pedido === 'pendiente' || o.status_pedido === 'listo' || o.status_pedido === 'en_camino' || o.status_pedido === 'verificando_pago' || o.status_pedido === 'efectivo_en_ruta');
   const deliveredOrders = orders.filter(o => o.status_pedido === 'entregado' && new Date(o.fecha).getTime() > sevenDaysAgo.getTime());
   
@@ -352,12 +365,7 @@ if (!user || user.role !== 'repartidor') {
         </div>
       </div>
 
-      {activeTab === 'pendientes' && order.status_pedido === 'listo' && order.pin_repartidor && (
-        <div className="mb-4 bg-purple-500/10 border border-purple-500/30 p-4 rounded-2xl text-center">
-          <p className="text-xs text-purple-400 font-bold uppercase tracking-widest mb-1">PIN de Retiro en Tienda</p>
-          <p className="text-3xl font-black text-white tracking-[10px]">{order.pin_repartidor}</p>
-        </div>
-      )}
+
 
       {activeTab === 'pendientes' && (
         <div className="flex flex-col gap-3 mt-4">
@@ -376,25 +384,48 @@ if (!user || user.role !== 'repartidor') {
             <MessageCircle size={16} /> Contactar
           </button>
           
-          {order.status_pedido === 'pendiente' ? (
-            <div className="bg-orange-500/10 border border-orange-500/20 text-orange-400 py-3 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 animate-pulse">
-              <AlertTriangle size={14} /> Preparando en Tienda...
-            </div>
-          ) : order.status_pedido === 'verificando_pago' ? (
-            <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 py-3 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 animate-pulse">
-              <AlertTriangle size={14} /> Verificando en tienda...
-            </div>
-          ) : isEfectivoEnRuta ? (
-            <div className="bg-orange-500/20 border border-orange-500/30 text-orange-400 py-3 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2">
-              <AlertTriangle size={14} /> Efectivo en Ruta
-            </div>
-          ) : (
+          {order.status_pedido === 'verificando_pago' ? (
+            <button 
+              disabled
+              className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 py-3 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 animate-pulse cursor-not-allowed opacity-80 w-full"
+            >
+              <AlertTriangle size={14} /> VERIFICANDO EN TIENDA...
+            </button>
+          ) : order.pagada && order.status_pedido !== 'listo' ? (
+            <button 
+              onClick={() => {
+                if (order.pin_cliente) {
+                  setOrderToValidatePin(order);
+                } else {
+                  handleFinalDelivery(order.id);
+                }
+              }}
+              className="bg-green-600 hover:bg-green-500 text-white w-full py-3 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg transition-colors"
+            >
+              <CheckCircle size={14} /> ENTREGAR
+            </button>
+          ) : order.status_pedido === 'listo' ? (
+            <button 
+              onClick={() => setOrderToRetire(order)}
+              className="bg-blue-600 hover:bg-blue-500 text-white w-full py-3 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg transition-colors"
+            >
+              <CheckCircle size={14} /> RETIRAR PEDIDO
+            </button>
+          ) : order.status_pedido === 'en_camino' && !order.pagada ? (
             <button 
               onClick={() => setSelectedOrder(order)}
-              className="bg-purple-600 hover:bg-purple-500 text-white w-full py-3 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-purple-900/50 transition-colors"
+              className="bg-purple-600 hover:bg-purple-500 text-white w-full py-3 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg transition-colors"
             >
-              <CheckCircle size={14} /> Entregar
+              <CheckCircle size={14} /> COBRAR Y NOTIFICAR
             </button>
+          ) : isEfectivoEnRuta ? (
+            <div className="bg-orange-500/20 border border-orange-500/30 text-orange-400 py-3 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2">
+              <AlertTriangle size={14} /> EFECTIVO EN RUTA
+            </div>
+          ) : (
+            <div className="bg-gray-500/10 border border-gray-500/20 text-gray-400 py-3 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2">
+              PREPARANDO EN TIENDA...
+            </div>
           )}
         </div>
       )}
@@ -439,6 +470,10 @@ if (!user || user.role !== 'repartidor') {
             </button>
             <button onClick={async () => {
               try {
+                if (user?.id) {
+                  await updateDocument('users', user.id, { isOnline: false, storeId: null });
+                }
+
                 const storeParam = new URLSearchParams(window.location.search).get('store');
                 const savedStore = localStorage.getItem('activeStoreId');
                 const storeToKeep = storeParam || savedStore || 'kalu-queso-sanjuan';
@@ -536,7 +571,32 @@ if (!user || user.role !== 'repartidor') {
         )}
       </div>
 
-      {/* Modal de Pago / Entrega */}
+      {/* Retiro Modal */}
+      {orderToRetire && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-6">
+          <div className="bg-[#111] border border-white/10 p-8 rounded-3xl w-full max-w-sm text-center relative">
+            <button onClick={() => setOrderToRetire(null)} className="absolute top-4 right-4 text-gray-500 hover:text-white"><X size={20}/></button>
+            <p className="text-xs text-purple-400 font-bold uppercase tracking-widest mb-1 mt-4">PIN de Retiro en Tienda</p>
+            <p className="text-4xl font-black text-white tracking-[15px]">{orderToRetire.pin_repartidor}</p>
+            <p className="text-sm font-bold text-gray-400 mt-6">Muéstrale este código al encargado de la tienda para que libere el pedido y puedas iniciar la ruta.</p>
+          </div>
+        </div>
+      )}
+
+      {/* PIN Validation Modal */}
+      {orderToValidatePin && (
+        <PinValidationModal 
+          order={orderToValidatePin} 
+          onClose={() => setOrderToValidatePin(null)} 
+          onSuccess={() => {
+            const ordId = orderToValidatePin.id;
+            setOrderToValidatePin(null);
+            handleFinalDelivery(ordId);
+          }} 
+        />
+      )}
+
+      {/* Payment Modal */}
       {selectedOrder && (
         <PaymentModal 
           order={selectedOrder} 
@@ -632,6 +692,50 @@ if (!user || user.role !== 'repartidor') {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function PinValidationModal({ order, onClose, onSuccess }: { order: any, onClose: () => void, onSuccess: () => void }) {
+  const [inputPin, setInputPin] = useState('');
+  const [error, setError] = useState(false);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-6">
+      <div className="bg-[#111] border border-white/10 p-8 rounded-3xl w-full max-w-sm text-center">
+        <h2 className="text-xl font-black uppercase tracking-tight text-white mb-2">Firma de Recepción</h2>
+        <p className="text-sm font-bold text-gray-400 mb-6">Pide al cliente su código de 4 dígitos para confirmar la entrega del pedido #{order.codigo_pedido || order.id.substring(0,8)}</p>
+        
+        <input 
+          type="text" 
+          maxLength={4}
+          value={inputPin}
+          onChange={(e) => {
+            setInputPin(e.target.value.replace(/\D/g, '').substring(0,4));
+            setError(false);
+          }}
+          className={`w-full bg-black/50 text-white text-center text-4xl font-black p-6 rounded-2xl border focus:outline-none transition-all tracking-[15px] ${error ? 'border-red-500 text-red-400 focus:border-red-500' : 'border-white/10 focus:border-amber-500'}`}
+          placeholder="****"
+        />
+        {error && <p className="text-red-400 text-xs font-bold mt-3 uppercase tracking-widest animate-pulse">❌ Código Incorrecto</p>}
+        
+        <div className="flex gap-3 mt-8">
+          <button onClick={onClose} className="flex-1 py-4 bg-white/10 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-white/20 transition-colors">Cancelar</button>
+          <button 
+            onClick={() => {
+              if (inputPin !== order.pin_cliente) {
+                setError(true);
+              } else {
+                onSuccess();
+              }
+            }}
+            disabled={inputPin.length !== 4}
+            className="flex-1 py-4 bg-amber-500 text-black rounded-xl font-black text-xs uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed hover:bg-amber-400 transition-colors"
+          >
+            Confirmar
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

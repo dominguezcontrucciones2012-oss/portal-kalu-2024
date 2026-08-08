@@ -60,7 +60,10 @@ const DriversScreen: React.FC = () => {
   const handlePromoteToDriver = async (userId: string) => {
     if (window.confirm('¿Convertir este usuario en Repartidor?')) {
       try {
-        await updateDocument('users', userId, { role: 'repartidor' });
+        await updateDocument('users', userId, { 
+          role: 'repartidor', 
+          storeId: getActiveStoreId() 
+        });
         addToast('success', 'Usuario promovido a Repartidor');
         setShowAddModal(false);
       } catch (err) {
@@ -89,8 +92,8 @@ const DriversScreen: React.FC = () => {
   );
 
   const potentialDrivers = allUsers.filter(u => 
-    u.role !== 'repartidor' && 
-    (u.username?.toLowerCase().includes(search.toLowerCase()) || u.email?.toLowerCase().includes(search.toLowerCase()))
+    (u.role !== 'repartidor' || u.storeId !== getActiveStoreId()) && 
+    (u.username?.toLowerCase().includes(search.toLowerCase()) || u.email?.toLowerCase().includes(search.toLowerCase()) || u.telefono?.includes(search))
   );
 
   return (

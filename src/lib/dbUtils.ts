@@ -18,7 +18,8 @@ import {
   persistentSingleTabManager, 
   limit, 
   orderBy,
-  runTransaction
+  runTransaction,
+  startAfter
 } from 'firebase/firestore';
 import { db, isMock, storage } from './firebase';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
@@ -211,7 +212,7 @@ export const subscribeToCollection = (collectionName: string, callback: (data: a
       q = query(collection(db, collectionName));
     }
 
-    unsub = onSnapshot(q, 
+    unsub = onSnapshot(q, { includeMetadataChanges: true },
       (snapshot) => {
         retryCount = 0; // reset on success
         const data = snapshot.docs.map(doc => {
@@ -535,6 +536,7 @@ export const createClient = async (clientData: any, authUid?: string) => {
     telefono: clientData.telefono || '',
     direccion: clientData.direccion || '',
     clientId: docId,
+    storeId: storeId,
     requirePinChange: clientData.pin ? false : true,
     createdAt: serverTimestamp()
   });
@@ -724,6 +726,24 @@ export const createSale = async (saleData: any) => {
     }
   }
 
+  // Guardar productos frecuentes en el cliente
+  if (saleData.cliente_id && saleData.cart && Array.isArray(saleData.cart)) {
+    try {
+      const clientRef = doc(db, 'clients', saleData.cliente_id);
+      const clientSnap = await getDoc(clientRef);
+      if (clientSnap.exists()) {
+        const clientData = clientSnap.data();
+        const currentFrecuentes = clientData.productos_frecuentes || [];
+        const newProductIds = saleData.cart.map((item: any) => item.product?.id).filter(Boolean);
+        // Combinar arreglos, eliminar duplicados y mantener máximo 20
+        const merged = Array.from(new Set([...newProductIds, ...currentFrecuentes])).slice(0, 20);
+        await updateDoc(clientRef, { productos_frecuentes: merged });
+      }
+    } catch (e) {
+      console.error("Error actualizando productos frecuentes del cliente:", e);
+    }
+  }
+
   return docRef.id;
 };
 
@@ -814,9 +834,9 @@ export const updateDocument = async (collectionName: string, docId: string, data
     
     const existingWallet = wallets[storeId] || { saldo_usd: currentData.saldo_usd || 0, puntos: currentData.puntos || 0, saldo_pendiente_usd: currentData.saldo_pendiente_usd || 0 };
     wallets[storeId] = {
-      saldo_usd: updateData.saldo_usd !== undefined ? updateData.saldo_usd : existingWallet.saldo_usd,
-      puntos: updateData.puntos !== undefined ? updateData.puntos : existingWallet.puntos,
-      saldo_pendiente_usd: updateData.saldo_pendiente_usd !== undefined ? updateData.saldo_pendiente_usd : existingWallet.saldo_pendiente_usd
+      saldo_usd: updateData.saldo_usd !== undefined ? updateData.saldo_usd : (existingWallet.saldo_usd || 0),
+      puntos: updateData.puntos !== undefined ? updateData.puntos : (existingWallet.puntos || 0),
+      saldo_pendiente_usd: updateData.saldo_pendiente_usd !== undefined ? updateData.saldo_pendiente_usd : (existingWallet.saldo_pendiente_usd || 0)
     };
     
     updateData.wallets = wallets;
@@ -833,7 +853,7 @@ export const updateDocument = async (collectionName: string, docId: string, data
     
     const existingWallet = wallets[storeId] || { saldo_pendiente_usd: currentData.saldo_pendiente_usd || 0 };
     wallets[storeId] = {
-      saldo_pendiente_usd: updateData.saldo_pendiente_usd !== undefined ? updateData.saldo_pendiente_usd : existingWallet.saldo_pendiente_usd
+      saldo_pendiente_usd: updateData.saldo_pendiente_usd !== undefined ? updateData.saldo_pendiente_usd : (existingWallet.saldo_pendiente_usd || 0)
     };
     
     updateData.wallets = wallets;
@@ -1156,4 +1176,99 @@ export const getProductorMovements = (productorId: string) => {
     orderBy('fecha', 'asc')
   );
   return getDocs(q).then(snapshot => snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
+};
+
+/**
+ * Prioridad 2: Optimizaciones de Rendimiento y Paginación
+ */
+
+export const fetchPaginatedSales = async (limitCount = 50, lastDocSnap?: any) => {
+  if (isMock) {
+    const res = await fetch('/api/db/sales');
+    const data = await res.json();
+    return { docs: data.slice(0, limitCount), lastVisible: null };
+  }
+  
+  const salesRef = collection(db, 'sales');
+  let q;
+  if (lastDocSnap) {
+    q = query(
+      salesRef,
+      where('storeId', '==', getActiveStoreId()),
+      orderBy('fecha', 'desc'),
+      startAfter(lastDocSnap),
+      limit(limitCount)
+    );
+  } else {
+    q = query(
+      salesRef,
+      where('storeId', '==', getActiveStoreId()),
+      orderBy('fecha', 'desc'),
+      limit(limitCount)
+    );
+  }
+  
+  const snap = await getDocs(q);
+  const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  const lastVisible = snap.docs[snap.docs.length - 1];
+  
+  return { docs, lastVisible, snapshot: snap };
+};
+
+export const subscribeToRecentSales = (days: number, callback: (data: any[]) => void) => {
+  if (isMock) {
+    return subscribeToCollection('sales', callback);
+  }
+  
+  const salesRef = collection(db, 'sales');
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  d.setHours(0,0,0,0);
+  
+  const q = query(
+    salesRef,
+    where('storeId', '==', getActiveStoreId()),
+    where('fecha', '>=', d.toISOString())
+  );
+  
+  return onSnapshot(q, (snap) => {
+    const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    callback(docs);
+  });
+};
+
+export const subscribeToActiveDispatch = (callback: (data: any[]) => void) => {
+  if (isMock) {
+    return subscribeToCollection('sales', callback);
+  }
+  const salesRef = collection(db, 'sales');
+  const q = query(
+    salesRef,
+    where('storeId', '==', getActiveStoreId()),
+    where('status_pedido', 'in', ['pendiente', 'listo', 'preparado', 'en_camino', 'verificando_pago', 'efectivo_en_ruta'])
+  );
+  
+  return onSnapshot(q, (snap) => {
+    const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    callback(docs);
+  });
+};
+
+export const subscribeToActiveDriverSales = (driverId: string, callback: (data: any[]) => void) => {
+  if (isMock) {
+    return subscribeToCollection('sales', callback);
+  }
+  
+  const salesRef = collection(db, 'sales');
+  const q = query(
+    salesRef,
+    where('storeId', '==', getActiveStoreId()),
+    where('repartidor_id', '==', driverId),
+    where('status_pedido', 'in', ['preparado', 'despachado', 'efectivo_en_ruta'])
+  );
+  
+  return onSnapshot(q, (snap) => {
+    const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    callback(docs);
+  });
 };

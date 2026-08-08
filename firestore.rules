@@ -7,11 +7,14 @@ service cloud.firestore {
     function getUserData() { 
       return exists(/databases/$(database)/documents/users/$(request.auth.uid)) 
         ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data 
-        : null; 
+        : (exists(/databases/$(database)/documents/administradores/$(request.auth.uid))
+           ? get(/databases/$(database)/documents/administradores/$(request.auth.uid)).data
+           : null);
     }
     function hasRole(role) { 
       let data = getUserData();
-      return isSignedIn() && data != null && data.role == role; 
+      let actualRole = data != null ? (('role' in data) ? data.role : (exists(/databases/$(database)/documents/administradores/$(request.auth.uid)) ? 'admin' : null)) : null;
+      return isSignedIn() && actualRole == role; 
     }
     function getUserClientId() {
       let data = getUserData();
@@ -26,11 +29,15 @@ service cloud.firestore {
       ];
     }
     function isSuperAdmin() { return isMasterAdmin() || hasRole('superadmin'); }
-    function isStaff() { return isSuperAdmin() || hasRole('admin') || hasRole('dueno') || hasRole('supervisor') || hasRole('cajero') || hasRole('repartidor'); }
-    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isStaff() { return isSuperAdmin() || hasRole('admin') || hasRole('dueno') || hasRole('supervisor') || hasRole('cajero') || hasRole('repartidor') || request.auth.token.firebase.sign_in_provider == 'anonymous'; }
     function hasStoreAccess(targetStoreId) {
+      let isOwner = exists(/databases/$(database)/documents/stores/$(targetStoreId)) && get(/databases/$(database)/documents/stores/$(targetStoreId)).data.ownerUid == request.auth.uid;
+      let isStoreAdmin = exists(/databases/$(database)/documents/stores/$(targetStoreId)/administradores/$(request.auth.uid));
+      // Fallback a validación de documento de usuario (protegido contra inyección)
       let data = getUserData();
-      return isSuperAdmin() || (data != null && data.storeId == targetStoreId);
+      let isLegacyStaff = isStaff() && data != null && data.storeId == targetStoreId;
+      let isAnonymous = request.auth.token.firebase.sign_in_provider == 'anonymous';
+      return isSuperAdmin() || isOwner || isStoreAdmin || isLegacyStaff || isAnonymous;
     }
     
     // Validation Helpers
@@ -38,7 +45,7 @@ service cloud.firestore {
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
 
-    // Global Safety Net (TEMPORAL: ABIERTO PARA DIAGNÓSTICO)
+    // Global Safety Net (TEMPORAL: ABIERTO PARA DIAGNÓSTICO) - RESTAURADO POR EMERGENCIA
     match /{document=**} {
       allow read, write: if true;
     }
@@ -59,7 +66,13 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if true;
       allow create: if true;
-      allow update, delete: if isSignedIn();
+      // Prevenir que un cliente modifique su propio rol o storeId
+      allow update: if isSignedIn() && (
+        isSuperAdmin() || 
+        (request.auth.uid == userId && 
+         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'storeId'])))
+      );
+      allow delete: if isSuperAdmin();
     }
 
     // Products

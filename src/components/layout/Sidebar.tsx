@@ -44,7 +44,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ userRole, isMobileMenuOpen, setIsMobileMenuOpen }) => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [isOpen, setIsOpen] = useState(true);
 
   // ── Tasa BCV: mostrar último valor conocido INSTANTANEAMENTE ──
@@ -68,6 +68,7 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole, isMobileMenuOpen, setIsMobi
   const [syncing, setSyncing] = useState(false);
   const [configName, setConfigName] = useState<{ name: string, tag: string } | null>(null);
   const [storeDocName, setStoreDocName] = useState<{ name: string, tag: string } | null>(null);
+  const [storeFeatures, setStoreFeatures] = useState<any>({});
 
   useEffect(() => {
     let mounted = true;
@@ -223,14 +224,18 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole, isMobileMenuOpen, setIsMobi
       import('../../lib/dbUtils').then(({ getActiveStoreId }) => {
         const activeStoreId = getActiveStoreId();
         const storeDoc = data.find(s => s.id === activeStoreId);
-        if (storeDoc && storeDoc.name) {
-          const parts = storeDoc.name.split(' ');
-          setStoreDocName({
-            name: parts[0].toUpperCase(),
-            tag: parts.slice(1).join(' ').toUpperCase() || 'STORE'
-          });
+        if (storeDoc) {
+          setStoreFeatures(storeDoc.features || {});
+          if (storeDoc.name) {
+            const parts = storeDoc.name.split(' ');
+            setStoreDocName({
+              name: parts[0].toUpperCase(),
+              tag: parts.slice(1).join(' ').toUpperCase() || 'STORE'
+            });
+          }
         } else {
           setStoreDocName(null);
+          setStoreFeatures({});
         }
       });
     });
@@ -263,7 +268,7 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole, isMobileMenuOpen, setIsMobi
     }
   };
 
-  const menuGroups = [
+  let menuGroups = [
     {
       label: 'Portal Vecino',
       items: [
@@ -275,12 +280,18 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole, isMobileMenuOpen, setIsMobi
       items: [
         { path: '/', icon: LayoutDashboard, label: 'DASHBOARD' },
         { path: '/pos', icon: ShoppingBag, label: 'PUNTO DE VENTA' },
-        { path: '/despacho', icon: Package, label: 'KDS / DESPACHO WEB' },
+        ...((storeFeatures.pedidosWeb || storeFeatures.hasOnlineStore) ? [
+          { path: '/despacho', icon: Package, label: 'KDS / DESPACHO WEB' }
+        ] : []),
         { path: '/closure', icon: ShieldCheck, label: 'CIERRE DIARIO' },
         { path: '/history', icon: History, label: 'HISTORIAL VENTAS' },
         { path: '/clients', icon: Users, label: 'CLIENTES' },
-        { path: '/repartidores', icon: Truck, label: 'REPARTIDORES' },
-        { path: '/morosos', icon: Users, label: 'CUENTAS X COBRAR' },
+        ...((storeFeatures.pedidosWeb || storeFeatures.hasOnlineStore) ? [
+          { path: '/repartidores', icon: Truck, label: 'REPARTIDORES' }
+        ] : []),
+        ...((storeFeatures.cuentasAbiertas || storeFeatures.hasOpenTabs) ? [
+          { path: '/morosos', icon: Users, label: 'CUENTAS X COBRAR' }
+        ] : []),
       ]
     },
     {
@@ -295,39 +306,16 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole, isMobileMenuOpen, setIsMobi
       label: 'Gerencia',
       items: [
         { path: '/reports', icon: BarChart2, label: 'ANÁLISIS' },
-        { path: '/accounting', icon: Calculator, label: 'CONTABILIDAD' },
-        { path: '/ledger', icon: BookOpen, label: 'LIBRETA QUESO' },
-        { path: '/sorteo', icon: Trophy, label: 'SORTEO SEMANAL' },
-        { path: '/ai-market', icon: Bot, label: 'IA MERCADO' },
+        ...(storeFeatures.sorteoSemanal ? [{ path: '/sorteo', icon: Trophy, label: 'SORTEO SEMANAL' }] : []),
+        ...((storeFeatures.aiModule || storeFeatures.hasAISales) ? [{ path: '/ai-market', icon: Bot, label: 'IA MERCADO' }] : []),
         { path: '/settings', icon: Settings, label: 'AJUSTES' },
       ]
-    },
-    ...((userRole === Role.SUPERADMIN || user?.storeId === 'kalu-queso-sanjuan') ? [{
-      label: 'SuperAdmin',
-      items: [
-        { path: '/superadmin', icon: Store, label: 'MULTI-TIENDAS' },
-      ]
-    }] : [])
+    }
   ];
 
   const handleLogout = async () => {
     try {
-      const storeParam = new URLSearchParams(window.location.search).get('store');
-      const savedStore = localStorage.getItem('activeStoreId');
-      const storeToKeep = storeParam || savedStore || 'kalu-queso-sanjuan';
-
-      // Limpiar sesión local
-      localStorage.removeItem('kalu_current_user');
-      localStorage.removeItem('kalu_pin_verified');
-      localStorage.removeItem('kalu_remembered_user');
-      sessionStorage.clear();
-      localStorage.setItem('activeStoreId', storeToKeep);
-
-      // Desconectamos en Firebase
-      await auth.signOut();
-
-      // Redirigir explícitamente y de forma dura a admin/login
-      window.location.href = `/admin/login?store=${storeToKeep}`;
+      await logout();
     } catch (error) {
       console.error('Error logging out:', error);
     }
@@ -350,9 +338,9 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole, isMobileMenuOpen, setIsMobi
 
       {/* Brand Section */}
       <div className={cn("p-6 pb-4 flex items-center", isOpen ? "gap-4" : "justify-center")}>
-        <img 
-          src="/logo.jpg?v=2026" 
-          alt="Mercado San Juan" 
+        <img
+          src="/logo.jpg?v=2026"
+          alt="Mercado San Juan"
           className="w-10 h-10 rounded-full object-cover flex-shrink-0 shadow-sm"
         />
         {isOpen && (
@@ -448,8 +436,8 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole, isMobileMenuOpen, setIsMobi
             </div>
             {syncMsg && (
               <div className={`mt-1.5 text-[8px] font-black px-2 py-1 rounded-lg ${syncMsg.type === 'ok'
-                  ? 'bg-green-500/15 text-green-400'
-                  : 'bg-red-500/15 text-red-400'
+                ? 'bg-green-500/15 text-green-400'
+                : 'bg-red-500/15 text-red-400'
                 }`}>
                 {syncMsg.text}
               </div>

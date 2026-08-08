@@ -45,6 +45,8 @@ import {
   subscribeToUserSales,
   subscribeToUserMessages
 } from '../../lib/dbUtils';
+import { db } from '../../lib/firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { type Client, type Sale, type Product, type PiezaProducto } from '../../types';
 import AIShoppingAssistant from './AIShoppingAssistant';
 import BiometricSetupButton from '../common/BiometricSetupButton';
@@ -114,7 +116,7 @@ const OrderStepper = ({ status, tipoEntrega }: { status: string, tipoEntrega: st
 };
 
 const ClientPortal: React.FC = () => {
-  const { user, setUser } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { activeStore } = useActiveStore();
   const [clientData, setClientData] = useState<Client | null>(null);
@@ -132,18 +134,7 @@ const ClientPortal: React.FC = () => {
   const displayLogo = storeLogoFromDB ? storeLogoFromDB : (isKaluStore ? "/tienda.kalu.jpg?v=4" : "/logo.jpg?v=2027");
 
   const handleLogout = async () => {
-    try {
-      localStorage.clear();
-      sessionStorage.clear();
-      await auth.signOut();
-      
-      // Redirigir usando href para evitar que React Router intercepte la ruta
-      // y mande al cliente al login antes de recargar. Eliminamos setUser(null)
-      // para evitar el salto a /login mientras la ventana recarga.
-      window.location.href = '/';
-    } catch (err) {
-      console.error(err);
-    }
+    logout();
   };
 
   // Estados de navegación e interfaz
@@ -228,6 +219,22 @@ const ClientPortal: React.FC = () => {
   const [cartPos, setCartPos] = useState({ x: 0, y: 0 });
   const [isDraggingCart, setIsDraggingCart] = useState(false);
   const dragState = useRef({ startX: 0, startY: 0, initialX: 0, initialY: 0, isDragging: false, hasMoved: false });
+
+  const updateCart = (product: Product, change: number) => {
+    setCart(prev => {
+      const existing = prev.find(item => item.product.id === product.id);
+      if (existing) {
+        const newCantidad = existing.cantidad + change;
+        if (newCantidad <= 0) {
+          return prev.filter(item => item.product.id !== product.id);
+        }
+        return prev.map(item => item.product.id === product.id ? { ...item, cantidad: newCantidad } : item);
+      } else if (change > 0) {
+        return [...prev, { product, cantidad: change }];
+      }
+      return prev;
+    });
+  };
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -556,10 +563,19 @@ Por favor verificar este pago en el banco.`;
       setIsRoleLoading(false);
     }, 2500);
 
-    // Suscribirse a los productos
-    const unsubProducts = subscribeToCollection('products', (data) => {
-      setProducts(data as Product[]);
-    });
+    // Obtener productos estáticamente para ahorrar RAM y batería
+    const fetchProducts = async () => {
+      try {
+        const { getActiveStoreId } = await import('../../lib/dbUtils');
+        const q = query(collection(db, 'products'), where('storeId', '==', getActiveStoreId()));
+        const snap = await getDocs(q);
+        const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setProducts(data as Product[]);
+      } catch (error) {
+        console.error("Error fetching products:", error);
+      }
+    };
+    fetchProducts();
 
     // Suscribirse a los mensajes directos y globales del cliente
     const unsubMensajes = subscribeToUserMessages([targetClientId, 'todos', 'global'], (myMsgs) => {
@@ -625,7 +641,6 @@ Por favor verificar este pago en el banco.`;
     return () => {
       clearTimeout(safetyTimeout);
       unsubClient();
-      unsubProducts();
       unsubMensajes();
       unsubConfig();
       unsubTasa();
@@ -842,8 +857,6 @@ Por favor verificar este pago en el banco.`;
 
   // Confirmar y procesar pedido
   const handleConfirmOrder = async () => {
-    alert("🚀 ¡Pronto abriremos! Por motivo de lanzamiento, las ventas en línea se abrirán dentro de 5 días. ¡Gracias por tu paciencia!");
-    return;
     
     if (cart.length === 0 || placingOrder) return;
     
@@ -984,7 +997,7 @@ Estatus: Pendiente por verificar/entregar
   };
 
   // Filtros de categoría y búsqueda
-  const categories = ['TODOS', ...Array.from(new Set(products.map(p => (p.categoria || 'GENERAL').trim().toUpperCase())))];
+  const categories = ['TODOS', ...Array.from(new Set(products.map(p => String(p.categoria || 'GENERAL').trim().toUpperCase())))];
   
   const filteredProducts = products.filter(product => {
     const matchesSearch = (product.nombre || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -1090,34 +1103,38 @@ Estatus: Pendiente por verificar/entregar
             <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/10 blur-[100px] rounded-full pointer-events-none" />
             
             <div className="relative z-10">
-              {/* Day AI Assistant Header Clickable */}
-              {activeStore?.features?.hasAI !== false && (
-                <button 
-                  onClick={() => window.dispatchEvent(new Event('open-ai-chat'))}
-                  className="flex flex-col items-start gap-4 mb-6 mt-2 text-left hover:scale-[1.02] active:scale-95 transition-transform w-full"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(251,191,36,0.3)] shrink-0 border border-amber-400 relative overflow-hidden">
-                      <img src="/day_avatar.jpg" className="w-full h-full object-cover" alt="Day AI" />
-                    </div>
-                    <div>
-                      <h2 className="text-xl font-black tracking-tight leading-none text-white flex items-center gap-1.5">
-                        <span>Soy Day, tu IA</span>
-                        <span className="text-[10px] font-black text-amber-400 tracking-[0.2em] bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">KALU</span>
-                      </h2>
-                      <p className="text-xs font-medium text-gray-400 mt-1">
-                        {new Date().getHours() < 12 ? '¡Buenos días' : new Date().getHours() < 18 ? '¡Buenas tardes' : '¡Buenas noches'}, {clientData.nombre.split(' ')[0]}!
-                      </p>
-                    </div>
+              {/* Day AI Assistant Header Clickable (Always visible for upsell) */}
+              <button 
+                onClick={() => {
+                  if (activeStore?.features?.hasAISales === false) {
+                    window.alert('El asistente de ventas con IA (Day) es una función Pro. Por favor, comunícate con la administración para actualizar tu plan y disfrutar de esta experiencia.');
+                  } else {
+                    window.dispatchEvent(new Event('open-ai-chat'));
+                  }
+                }}
+                className="flex flex-col items-start gap-4 mb-6 mt-2 text-left hover:scale-[1.02] active:scale-95 transition-transform w-full"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-16 h-16 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(251,191,36,0.3)] shrink-0 border border-amber-400 relative overflow-hidden">
+                    <img src="/day_avatar.jpg" className="w-full h-full object-cover" alt="Day AI" />
                   </div>
-                  <div className="bg-amber-400 hover:bg-amber-300 px-5 py-3 rounded-2xl flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(251,191,36,0.25)] w-full transition-colors">
-                    <Bot size={18} className="text-black" />
-                    <p className="text-xs font-black uppercase tracking-wider text-black">
-                      Toca aquí para hacer tu pedido por IA
+                  <div>
+                    <h2 className="text-xl font-black tracking-tight leading-none text-white flex items-center gap-1.5">
+                      <span>Soy Day, tu IA</span>
+                      <span className="text-[10px] font-black text-amber-400 tracking-[0.2em] bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">KALU</span>
+                    </h2>
+                    <p className="text-xs font-medium text-gray-400 mt-1">
+                      {new Date().getHours() < 12 ? '¡Buenos días' : new Date().getHours() < 18 ? '¡Buenas tardes' : '¡Buenas noches'}, {clientData.nombre.split(' ')[0]}!
                     </p>
                   </div>
-                </button>
-              )}
+                </div>
+                <div className="bg-amber-400 hover:bg-amber-300 px-5 py-3 rounded-2xl flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(251,191,36,0.25)] w-full transition-colors">
+                  <Bot size={18} className="text-black" />
+                  <p className="text-xs font-black uppercase tracking-wider text-black">
+                    Toca aquí para hacer tu pedido por IA
+                  </p>
+                </div>
+              </button>
 
               {activeStore?.features?.hasVIPCredit !== false && (
                 <div className="bg-black/40 backdrop-blur-md rounded-3xl p-6 border border-amber-500/20 mb-6 relative">
@@ -1221,39 +1238,39 @@ Estatus: Pendiente por verificar/entregar
             className="group relative w-full aspect-[16/9] sm:aspect-[21/9] bg-slate-900 rounded-[2rem] overflow-hidden cursor-pointer border-2 border-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.3)] transition-all hover:shadow-[0_0_30px_rgba(251,191,36,0.5)]"
           >
             {/* Video Thumbnail (solo primera toma) */}
-            <video 
-              src={propagandaVideoUrl ? (propagandaVideoUrl.includes('#t=') ? propagandaVideoUrl : `${propagandaVideoUrl}#t=0.001`) : ''}
-              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 opacity-80"
-              muted
-              playsInline
-              preload="metadata"
-            />
-            
-            {/* Overlay Degradado para legibilidad */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent pointer-events-none" />
-            
-            {/* Contenido y Botón de Play */}
-            <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
-              <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border border-white/30 text-white mb-4 group-hover:scale-110 group-hover:bg-white/30 transition-all duration-300 shadow-[0_0_30px_rgba(255,255,255,0.2)]">
-                <Play size={32} fill="currentColor" className="ml-1 drop-shadow-lg" />
+              <video 
+                src={propagandaVideoUrl ? (propagandaVideoUrl.includes('#t=') ? propagandaVideoUrl : `${propagandaVideoUrl}#t=0.001`) : ''}
+                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 opacity-80"
+                muted
+                playsInline
+                preload="metadata"
+              />
+              
+              {/* Overlay Degradado para legibilidad */}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent pointer-events-none" />
+              
+              {/* Contenido y Botón de Play */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
+                <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border border-white/30 text-white mb-4 group-hover:scale-110 group-hover:bg-white/30 transition-all duration-300 shadow-[0_0_30px_rgba(255,255,255,0.2)]">
+                  <Play size={32} fill="currentColor" className="ml-1 drop-shadow-lg" />
+                </div>
               </div>
-            </div>
 
-            {/* Textos inferiores */}
-            <div className="absolute bottom-6 left-6 right-6 flex flex-col sm:flex-row items-start sm:items-end justify-between gap-2">
-              <div className="text-left">
-                <span className="text-[10px] font-black uppercase text-purple-300 tracking-[0.2em] bg-purple-500/30 px-3 py-1 rounded-full backdrop-blur-md border border-purple-500/30 mb-2 inline-block">
-                  Novedades Kalu
+              {/* Textos inferiores */}
+              <div className="absolute bottom-6 left-6 right-6 flex flex-col sm:flex-row items-start sm:items-end justify-between gap-2">
+                <div className="text-left">
+                  <span className="text-[10px] font-black uppercase text-purple-300 tracking-[0.2em] bg-purple-500/30 px-3 py-1 rounded-full backdrop-blur-md border border-purple-500/30 mb-2 inline-block">
+                    Novedades Kalu
+                  </span>
+                  <h3 className="text-xl font-black text-white uppercase tracking-tight drop-shadow-lg leading-tight">
+                    Propaganda Comercial
+                  </h3>
+                </div>
+                <span className="text-[10px] text-white/70 font-bold uppercase tracking-wider hidden sm:block">
+                  Toca para reproducir
                 </span>
-                <h3 className="text-xl font-black text-white uppercase tracking-tight drop-shadow-lg leading-tight">
-                  Propaganda Comercial
-                </h3>
               </div>
-              <span className="text-[10px] text-white/70 font-bold uppercase tracking-wider hidden sm:block">
-                Toca para reproducir
-              </span>
             </div>
-          </div>
 
           {/* Sección de Mensajes y Avisos */}
           {mensajes.length > 0 && (
@@ -1403,6 +1420,75 @@ Estatus: Pendiente por verificar/entregar
             </div>
           </div>
 
+          {/* Favoritos de Siempre */}
+          {clientData?.productos_frecuentes && clientData.productos_frecuentes.length > 0 && products.length > 0 && (
+            <div className="mb-6">
+              <div className="flex items-center gap-2 px-2 mb-3">
+                <Star className="text-amber-400" size={16} fill="currentColor" />
+                <h3 className="text-xs font-black text-amber-400 uppercase tracking-widest drop-shadow-md">Tus Favoritos de Siempre</h3>
+              </div>
+              <div className="flex gap-3 overflow-x-auto pb-4 px-2 scrollbar-none snap-x">
+                {products
+                  .filter(p => clientData.productos_frecuentes?.includes(p.id))
+                  .slice(0, 6)
+                  .map(product => {
+                    const qty = getQuantityInCart(product.id);
+                    const price = product.precio_oferta_usd || product.precio_normal_usd;
+                    const hasOffer = !!product.precio_oferta_usd;
+                    return (
+                      <div 
+                        key={`fav-${product.id}`}
+                        className={cn(
+                          "min-w-[140px] max-w-[140px] snap-center rounded-3xl p-2.5 flex flex-col justify-between transition-all duration-300 group shadow-lg bg-[#050505] border-t-2 cursor-pointer shrink-0",
+                          qty > 0 
+                            ? "border-t-amber-400 border-x border-b border-x-amber-500/50 border-b-amber-500/20 shadow-[0_0_20px_rgba(251,191,36,0.3)] scale-[1.02]" 
+                            : "border-t-amber-500/60 border-x border-b border-x-amber-500/20 border-b-amber-500/10 hover:border-amber-400 hover:shadow-[0_0_25px_rgba(251,191,36,0.4)]"
+                        )}
+                      >
+                        <div className="flex flex-col gap-2 flex-1">
+                          <div className="w-full aspect-square rounded-2xl overflow-hidden bg-[#111] border border-amber-500/10 relative shrink-0 group-hover:border-amber-400/50 transition-colors">
+                            {product.imagen_url ? (
+                              <img src={product.imagen_url} alt={product.nombre} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-amber-500/20">
+                                <ShoppingBag size={20} />
+                              </div>
+                            )}
+                            {product.stock <= 0 && (
+                              <div className="absolute inset-0 bg-black/80 flex items-center justify-center">
+                                <span className="text-[8px] font-black uppercase bg-red-500 text-white px-1.5 py-0.5 rounded">Agotado</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="space-y-1 mt-1 flex-1 flex flex-col">
+                            <h4 className="font-bold text-[10px] uppercase line-clamp-2 text-amber-400 group-hover:text-amber-300 transition-colors leading-tight drop-shadow-md">{product.nombre}</h4>
+                          </div>
+                        </div>
+                        <div className="mt-2 pt-2 border-t border-amber-500/20 flex flex-col gap-2">
+                          <div className="flex flex-col">
+                            <span className="text-xs font-black text-amber-400">{formatCurrency(price)}</span>
+                          </div>
+                          {product.stock > 0 && (
+                            <div className="flex items-center gap-1">
+                              {qty > 0 ? (
+                                <div className="flex items-center justify-between w-full bg-amber-500/20 rounded-xl p-1 border border-amber-500/30">
+                                  <button onClick={(e) => { e.stopPropagation(); updateCart(product, -1); }} className="p-1 hover:bg-black/40 rounded-lg text-amber-400"><Minus size={12} /></button>
+                                  <span className="text-xs font-black text-amber-400">{qty}</span>
+                                  <button onClick={(e) => { e.stopPropagation(); updateCart(product, 1); }} className="p-1 hover:bg-black/40 rounded-lg text-amber-400"><Plus size={12} /></button>
+                                </div>
+                              ) : (
+                                <button onClick={(e) => { e.stopPropagation(); updateCart(product, 1); }} className="w-full bg-amber-500/10 text-amber-500 border border-amber-500/30 hover:bg-amber-400 hover:text-black py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all">Agregar</button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+
           {/* Buscador & Categorías */}
           <div className="bg-[#050505] border-t border-amber-400 border-x border-b border-x-amber-500/30 border-b-amber-500/10 p-5 rounded-[2rem] space-y-4 shadow-[0_0_15px_rgba(251,191,36,0.05)] hover:shadow-[0_0_25px_rgba(251,191,36,0.15)] transition-shadow">
             <div className="relative">
@@ -1434,7 +1520,7 @@ Estatus: Pendiente por verificar/entregar
           </div>
 
           {/* Grid de Productos */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 mt-6">
             {filteredProducts.map(product => {
               const qty = getQuantityInCart(product.id);
               const price = product.precio_oferta_usd || product.precio_normal_usd;
@@ -1453,7 +1539,7 @@ Estatus: Pendiente por verificar/entregar
                   <div className="flex flex-col gap-2 flex-1">
                     <div className="w-full aspect-square rounded-2xl overflow-hidden bg-[#111] border border-amber-500/10 relative shrink-0 group-hover:border-amber-400/50 transition-colors">
                       {product.imagen_url ? (
-                        <img src={product.imagen_url} alt={product.nombre} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                        <img src={product.imagen_url} alt={product.nombre} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-amber-500/20">
                           <ShoppingBag size={24} />
@@ -1632,6 +1718,7 @@ Estatus: Pendiente por verificar/entregar
 
                 <OrderStepper status={(sale as any).status_pedido} tipoEntrega={(sale as any).tipo_entrega} />
 
+
                 {/* Detalles de productos */}
                 <div className="space-y-2">
                   {(sale.detalles || []).map((det, i) => (
@@ -1646,6 +1733,12 @@ Estatus: Pendiente por verificar/entregar
                 <div className="pt-3 border-t border-amber-500/20 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-2">
                   <div className="text-[10px] text-amber-500/60 font-bold">
                     Tasa de cambio: {sale.tasa_momento.toFixed(2).replace('.', ',')} Bs/USD
+                    
+                    {((sale as any).status_pedido === 'en_camino' || (sale as any).status_pedido === 'efectivo_en_ruta') && (sale as any).tipo_entrega === 'delivery' && (sale as any).pin_cliente && (
+                      <div className="mt-2 text-amber-400 font-black text-xs uppercase tracking-widest animate-pulse">
+                        Firma / Código de Recepción: <span className="text-sm tracking-[5px] text-white bg-black/40 px-2 py-0.5 rounded border border-white/10">{(sale as any).pin_cliente}</span>
+                      </div>
+                    )}
                   </div>
                   <div className="text-right w-full sm:w-auto">
                     <div className="text-[9px] text-gray-400 font-black uppercase tracking-wider leading-none">Total Factura</div>
@@ -1887,18 +1980,9 @@ Estatus: Pendiente por verificar/entregar
                 </div>
               </div>
 
-              <div className="bg-yellow-500/10 border border-yellow-500/50 rounded-xl p-4 mb-4 text-center">
-                <p className="text-yellow-400 font-bold text-sm">
-                  🚀 ¡Pronto abriremos!
-                </p>
-                <p className="text-yellow-200/80 text-xs mt-1">
-                  Por motivo de lanzamiento, las ventas en línea se abrirán dentro de 5 días. ¡Gracias por tu paciencia!
-                </p>
-              </div>
-
               <button 
                 onClick={handleConfirmOrder}
-                disabled={true}
+                disabled={placingOrder || cart.length === 0 || (metodoPago === 'inmediato' && !referenciaPago.trim())}
                 className="w-full bg-amber-400 text-black hover:bg-amber-300 py-4 rounded-2xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-3 hover:opacity-95 active:scale-[0.98] transition-all shadow-lg shadow-[0_0_20px_rgba(251,191,36,0.4)] disabled:opacity-50"
               >
                 {placingOrder 

@@ -8,7 +8,8 @@
     "dev:server": "tsx server.ts",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "deploy:kalu": "npm run build && npx firebase-tools deploy"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
@@ -22,6 +23,7 @@
     "firebase": "^12.13.0",
     "firebase-admin": "^14.0.0",
     "firebase-tools": "^15.22.0",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "multer": "^2.2.0",
@@ -43,6 +45,7 @@
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "vite-plugin-singlefile": "^2.3.3"
   }
 }

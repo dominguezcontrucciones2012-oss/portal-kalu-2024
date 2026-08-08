@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useActiveStore } from '../../hooks/useActiveStore';
 import { 
   ShoppingBag, 
@@ -116,6 +117,12 @@ const PublicCatalogScreen: React.FC = () => {
   const [regCedula, setRegCedula] = useState('');
   const [regTelefono, setRegTelefono] = useState('');
   const [regDireccion, setRegDireccion] = useState('');
+  const [showAddressModal, setShowAddressModal] = useState(false);
+  const [addressData, setAddressData] = useState({
+    tipoVia: '',
+    nombreVia: '',
+    detalle: ''
+  });
   const [regPin, setRegPin] = useState('');
   const [regConfirmPin, setRegConfirmPin] = useState('');
 
@@ -185,12 +192,19 @@ const PublicCatalogScreen: React.FC = () => {
 
   // Cargar productos y tasa BCV
   useEffect(() => {
-    const unsub = subscribeToCollection('products', (data) => {
-      // dbUtils.ts ya se encarga de traer los productos de la tienda actual.
-      // Eliminamos el doble filtro para evitar el bug "No se encontraron productos".
-      setProducts(data as Product[]);
-      setLoading(false);
-    });
+    const fetchProducts = async () => {
+      try {
+        const q = query(collection(db, 'products'), where('storeId', '==', getActiveStoreId()));
+        const snap = await getDocs(q);
+        const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setProducts(data as Product[]);
+      } catch (error) {
+        console.error("Error fetching products:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchProducts();
 
     const unsubTasa = subscribeToCollection('tasas_bcv', (data) => {
       if (data && data.length > 0) {
@@ -237,7 +251,6 @@ const PublicCatalogScreen: React.FC = () => {
     }
 
     return () => {
-      unsub();
       unsubTasa();
       unsubConfig();
     };
@@ -249,7 +262,7 @@ const PublicCatalogScreen: React.FC = () => {
   }, [cart]);
 
   // Filtro de categorías y búsqueda
-  const categories = ['TODOS', ...Array.from(new Set(products.map(p => (p.categoria || 'GENERAL').trim().toUpperCase())))];
+  const categories = ['TODOS', ...Array.from(new Set(products.map(p => String(p.categoria || 'GENERAL').trim().toUpperCase())))];
 
   const filteredProducts = products.filter(product => {
     const matchesSearch = (product.nombre || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -306,8 +319,16 @@ const PublicCatalogScreen: React.FC = () => {
   // Registro de Cliente "Ahí Mismo"
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!regNombre || !regCedula || !regPin || !regConfirmPin) {
+    
+    const nombreLimpio = regNombre.trim();
+    const cedulaLimpia = regCedula.trim();
+
+    if (!nombreLimpio || !cedulaLimpia || !regPin || !regConfirmPin) {
       setAuthError('Por favor complete los campos obligatorios (*)');
+      return;
+    }
+    if (!regDireccion || !addressData.tipoVia || !addressData.nombreVia || !addressData.detalle) {
+      setAuthError('Por favor agregue y complete su Dirección de Entrega detallada.');
       return;
     }
     if (regPin.length !== 6 || !/^\d+$/.test(regPin)) {
@@ -326,10 +347,15 @@ const PublicCatalogScreen: React.FC = () => {
       // El sistema ahora permite repetir PIN porque la llave primaria de acceso es (Cédula + PIN)
 
       const clientData = {
-        nombre: regNombre,
-        cedula: regCedula,
-        telefono: regTelefono,
+        nombre: nombreLimpio,
+        cedula: cedulaLimpia,
+        telefono: regTelefono.trim(),
         direccion: regDireccion,
+        direccion_estructurada: {
+          tipoVia: addressData.tipoVia.trim(),
+          nombreVia: addressData.nombreVia.trim(),
+          detalle: addressData.detalle.trim()
+        },
         pin: regPin,
         saldo_usd: 0,
         puntos: 0
@@ -339,10 +365,10 @@ const PublicCatalogScreen: React.FC = () => {
 
       const registeredUser = {
         id: clientId,
-        username: regNombre,
+        username: nombreLimpio,
         role: 'cliente' as any,
         pin: regPin,
-        cedula: regCedula,
+        cedula: cedulaLimpia,
         clientId: clientId
       };
       
@@ -431,6 +457,20 @@ const PublicCatalogScreen: React.FC = () => {
       if (!clientData) {
         throw new Error("No se encontraron los datos de tu cliente en el sistema.");
       }
+
+      if (tipoEntrega === 'delivery') {
+        const hasDireccion = clientData.direccion && clientData.direccion.trim() !== '';
+        const hasEstructurada = clientData.direccion_estructurada && 
+                                clientData.direccion_estructurada.tipoVia && 
+                                clientData.direccion_estructurada.nombreVia;
+        
+        if (!hasDireccion && !hasEstructurada) {
+          alert("Para solicitar delivery debes tener una dirección de entrega válida registrada. Comunícate con la tienda para actualizarla o escoge Retiro.");
+          setPlacingOrder(false);
+          return;
+        }
+      }
+
       for (const item of cart) {
         const dbProd = latestProducts.find((p: any) => p.id === item.product.id);
         if (dbProd && dbProd.stock < item.cantidad) {
@@ -566,7 +606,7 @@ Estatus: Pendiente por verificar/entregar
         <p className="text-gray-400 max-w-md text-lg">
           Nuestro portal de compras se encuentra cerrado por mantenimiento y mejoras.
         </p>
-        <p className="text-[#3498db] font-bold mt-2">
+        <p className="text-amber-400 font-bold mt-2">
           El horario de atención es de 6:00 AM a 6:00 PM.
         </p>
         <button 
@@ -580,6 +620,34 @@ Estatus: Pendiente por verificar/entregar
           className="mt-12 text-xs text-white/30 hover:text-white/60 transition-all font-medium uppercase tracking-widest"
         >
           Acceso Staff
+        </button>
+      </div>
+    );
+  }
+
+  if (activeStore?.features?.hasOnlineStore === false) {
+    return (
+      <div 
+        className="min-h-screen text-slate-100 font-sans flex flex-col items-center justify-center p-4 text-center"
+        style={{
+          backgroundImage: `linear-gradient(rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.98)), url('${displayLogo}')`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundAttachment: 'fixed'
+        }}
+      >
+        <div className="w-24 h-24 bg-blue-500/20 text-blue-500 rounded-full flex items-center justify-center mb-6 border border-blue-500/30">
+          <ShoppingBag size={48} />
+        </div>
+        <h1 className="text-4xl font-black mb-4">PORTAL INACTIVO</h1>
+        <p className="text-gray-400 max-w-md text-lg">
+          Esta tienda opera únicamente de forma presencial. El portal web se encuentra inactivo.
+        </p>
+        <button 
+          onClick={() => navigate('/')}
+          className="mt-8 px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl font-bold transition-all text-sm uppercase tracking-widest flex items-center justify-center gap-2 mx-auto"
+        >
+          <ArrowLeft size={16} /> Volver al Directorio
         </button>
       </div>
     );
@@ -623,7 +691,7 @@ Estatus: Pendiente por verificar/entregar
             </div>
             <button 
               onClick={() => { setOrderSuccess(null); navigate('/client-portal'); }}
-              className="w-full bg-[#2ecc71] hover:bg-[#27ae60] text-white py-4 rounded-2xl font-black uppercase tracking-widest transition-colors active:scale-95"
+              className="w-full bg-amber-400 hover:bg-[#27ae60] text-white py-4 rounded-2xl font-black uppercase tracking-widest transition-colors active:scale-95"
             >
               Ir a mi Portal de Compras
             </button>
@@ -870,18 +938,18 @@ Estatus: Pendiente por verificar/entregar
             {/* VISTA DE REGISTRO / DESCARGA */}
             {showDownloadPrompt ? (
               <div className="space-y-6 text-center animate-in zoom-in duration-500">
-                <div className="w-24 h-24 bg-gradient-to-br from-[#3498db] to-[#2ecc71] rounded-3xl mx-auto flex items-center justify-center shadow-2xl">
+                <div className="w-24 h-24 bg-[#111] border border-amber-500/30 rounded-3xl mx-auto flex items-center justify-center shadow-2xl">
                    <Rocket size={48} className="text-white" />
                 </div>
                 <div>
                   <h2 className="text-2xl font-black text-white uppercase tracking-tight">¡Registro Exitoso!</h2>
-                  <p className="text-[#3498db] font-bold mt-1">¿Quieres descargar la Mini App?</p>
+                  <p className="text-amber-400 font-bold mt-1">¿Quieres descargar la Mini App?</p>
                 </div>
                 <div className="bg-white/5 p-4 rounded-2xl border border-white/10 text-left space-y-3">
                   <p className="text-sm text-gray-300 font-medium">Lleva Kalu siempre contigo. Para instalar rápido y fácil:</p>
                   <ul className="text-xs text-gray-400 space-y-2 font-bold">
-                    <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-[#2ecc71]"></div> 1. Toca Menú (⋮) o Compartir en tu navegador</li>
-                    <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-[#2ecc71]"></div> 2. Selecciona "Agregar a inicio" o "Instalar app"</li>
+                    <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-amber-400"></div> 1. Toca Menú (⋮) o Compartir en tu navegador</li>
+                    <li className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-amber-400"></div> 2. Selecciona "Agregar a inicio" o "Instalar app"</li>
                   </ul>
                 </div>
                 <div className="flex flex-col gap-3 pt-4">
@@ -891,7 +959,7 @@ Estatus: Pendiente por verificar/entregar
                       setShowAuthModal(false);
                       setShowDownloadPrompt(false);
                     }}
-                    className="w-full bg-[#3498db] text-white py-4 rounded-xl font-black hover:bg-[#2980b9] transition-all shadow-[0_10px_20px_rgba(52,152,219,0.2)]"
+                    className="w-full bg-amber-400 text-white py-4 rounded-xl font-black hover:bg-[#2980b9] transition-all shadow-[0_10px_20px_rgba(52,152,219,0.2)]"
                   >
                     ¡ENTENDIDO, ENTRAR A COMPRAR!
                   </button>
@@ -906,7 +974,7 @@ Estatus: Pendiente por verificar/entregar
                     required
                     value={regNombre}
                     onChange={(e) => setRegNombre(e.target.value)}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-4 text-sm font-semibold text-white outline-none focus:border-[#3498db] transition-all"
+                    className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-4 text-sm font-semibold text-white outline-none focus:border-amber-400 transition-all"
                     placeholder="Ej. Juan Pérez"
                   />
                 </div>
@@ -917,32 +985,20 @@ Estatus: Pendiente por verificar/entregar
                     required
                     value={regCedula}
                     onChange={(e) => setRegCedula(e.target.value)}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-4 text-sm font-semibold text-white outline-none focus:border-[#3498db] transition-all"
+                    className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-4 text-sm font-semibold text-white outline-none focus:border-amber-400 transition-all"
                     placeholder="Ej. V-12345678"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-black uppercase text-gray-500 tracking-widest px-2">Teléfono</label>
-                    <input 
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase text-gray-500 tracking-widest px-2">Teléfono</label>
+                  <input 
                     type="text"
                     value={regTelefono}
                     onChange={(e) => setRegTelefono(e.target.value)}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-4 text-xs font-semibold text-white outline-none focus:border-[#3498db] transition-all"
-                    placeholder="0424-5556677"
+                    className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-4 text-sm font-semibold text-white outline-none focus:border-amber-400 transition-all"
+                    placeholder="Ej. 0424-5556677"
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black uppercase text-gray-500 tracking-widest px-2">Dirección</label>
-                  <input 
-                    type="text"
-                    value={regDireccion}
-                    onChange={(e) => setRegDireccion(e.target.value)}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-4 text-xs font-semibold text-white outline-none focus:border-[#3498db] transition-all"
-                    placeholder="Calle 3, Casa #10"
-                  />
-                </div>
-              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-[9px] font-black uppercase text-gray-500 tracking-widest px-2">PIN Clave (6 números) *</label>
@@ -952,7 +1008,7 @@ Estatus: Pendiente por verificar/entregar
                     maxLength={6}
                     value={regPin}
                     onChange={(e) => setRegPin(e.target.value.replace(/\D/g, ''))}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-4 text-center text-lg font-black tracking-widest text-[#3498db] outline-none focus:border-[#3498db] transition-all"
+                    className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-4 text-center text-lg font-black tracking-widest text-amber-400 outline-none focus:border-amber-400 transition-all"
                     placeholder="****"
                   />
                 </div>
@@ -964,16 +1020,25 @@ Estatus: Pendiente por verificar/entregar
                     maxLength={6}
                     value={regConfirmPin}
                     onChange={(e) => setRegConfirmPin(e.target.value.replace(/\D/g, ''))}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-4 text-center text-lg font-black tracking-widest text-[#3498db] outline-none focus:border-[#3498db] transition-all"
+                    className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-4 text-center text-lg font-black tracking-widest text-amber-400 outline-none focus:border-amber-400 transition-all"
                     placeholder="****"
                   />
                 </div>
               </div>
 
+              <div className="pt-2 pb-1">
+                <div 
+                  onClick={() => setShowAddressModal(true)}
+                  className={`w-full border rounded-xl py-3.5 px-4 text-xs font-black uppercase tracking-widest text-center cursor-pointer transition-all shadow-[0_0_15px_rgba(251,191,36,0.1)] ${addressData.tipoVia ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-black/60 border-white/20 text-gray-400 hover:border-amber-400'}`}
+                >
+                  {addressData.tipoVia ? "¡Dirección lista! ✓" : "Toca para agregar Dirección de Entrega *"}
+                </div>
+              </div>
+
               <button 
                 type="submit"
-                disabled={authLoading}
-                className="w-full bg-gradient-to-r from-[#3498db] to-[#2ecc71] text-white py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all hover:opacity-90 active:scale-98"
+                disabled={authLoading || !regNombre.trim() || !regCedula.trim() || regPin.length !== 6 || regPin !== regConfirmPin || !regDireccion}
+                className={`w-full text-black shadow-[0_0_15px_rgba(251,191,36,0.4)] py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${authLoading || !regNombre.trim() || !regCedula.trim() || regPin.length !== 6 || regPin !== regConfirmPin || !regDireccion ? 'bg-gray-600 text-gray-400 cursor-not-allowed shadow-none' : 'bg-amber-400 text-black hover:opacity-90 active:scale-98'}`}
               >
                 {authLoading ? 'REGISTRANDO...' : 'REGISTRARME Y COMPRAR'}
               </button>
@@ -982,7 +1047,7 @@ Estatus: Pendiente por verificar/entregar
                 <button 
                   type="button"
                   onClick={() => { setAuthView('login'); setAuthError(null); }}
-                  className="text-xs text-[#3498db] font-bold hover:underline"
+                  className="text-xs text-amber-400 font-bold hover:underline"
                 >
                   ¿Ya tienes una cuenta? Inicia sesión aquí
                 </button>
@@ -998,7 +1063,7 @@ Estatus: Pendiente por verificar/entregar
                   value={loginPin}
                   autoFocus
                   onChange={(e) => setLoginPin(e.target.value.replace(/\D/g, ''))}
-                  className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 px-4 text-center text-3xl font-black tracking-[0.8em] text-[#2ecc71] outline-none focus:border-[#2ecc71] transition-all"
+                  className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 px-4 text-center text-3xl font-black tracking-[0.8em] text-amber-400 outline-none focus:border-amber-400 transition-all"
                   placeholder="****"
                 />
               </div>
@@ -1006,7 +1071,7 @@ Estatus: Pendiente por verificar/entregar
               <button 
                 type="submit"
                 disabled={loginPin.length < 6 || authLoading}
-                className="w-full bg-[#2ecc71] text-white py-3.5 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-[#27ae60] transition-all disabled:opacity-50"
+                className="w-full bg-amber-400 text-white py-3.5 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-[#27ae60] transition-all disabled:opacity-50"
               >
                 {authLoading ? 'ENTRANDO...' : 'INICIAR SESIÓN Y COMPRAR'}
               </button>
@@ -1015,7 +1080,7 @@ Estatus: Pendiente por verificar/entregar
                 <button 
                   type="button"
                   onClick={() => { setAuthView('register'); setAuthError(null); }}
-                  className="text-xs text-[#3498db] font-bold hover:underline"
+                  className="text-xs text-amber-400 font-bold hover:underline"
                 >
                   ¿Eres nuevo? Regístrate gratis aquí
                 </button>
@@ -1025,8 +1090,99 @@ Estatus: Pendiente por verificar/entregar
         </div>
       </div>
     )}
+
+    <AnimatePresence>
+      {showAddressModal && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowAddressModal(false)}
+            className="absolute inset-0 bg-black/80 backdrop-blur-md"
+          />
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            className="relative w-full max-w-sm bg-gradient-to-b from-[#1a1a1a] to-black border-2 border-amber-500/50 rounded-[2rem] shadow-[0_0_50px_-12px_rgba(251,191,36,0.3)] overflow-hidden"
+          >
+            <div className="p-6 border-b border-white/5 flex items-center justify-between bg-amber-500/10">
+              <h2 className="text-xl font-black text-amber-500 uppercase tracking-widest">
+                DIRECCIÓN
+              </h2>
+              <button onClick={() => setShowAddressModal(false)} className="p-2 hover:bg-white/5 rounded-xl transition-colors text-white">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-amber-500/70 uppercase tracking-widest px-2">Tipo de Vía</label>
+                <select 
+                  className="w-full bg-black/40 border border-amber-500/30 rounded-xl p-3 focus:outline-none focus:border-amber-500 transition-all font-bold text-amber-400 appearance-none"
+                  value={addressData.tipoVia}
+                  onChange={e => setAddressData({...addressData, tipoVia: e.target.value})}
+                >
+                  <option value="" className="bg-black text-white">Selecciona...</option>
+                  <option value="Avenida" className="bg-black text-white">Avenida</option>
+                  <option value="Calle" className="bg-black text-white">Calle</option>
+                  <option value="Vereda" className="bg-black text-white">Vereda</option>
+                  <option value="Calle Nacional" className="bg-black text-white">Calle Nacional</option>
+                  <option value="Carrera" className="bg-black text-white">Carrera</option>
+                  <option value="Carretera" className="bg-black text-white">Carretera</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-amber-500/70 uppercase tracking-widest px-2">Nombre / Número de Vía</label>
+                <input 
+                  type="text" 
+                  className="w-full bg-black/40 border border-amber-500/30 rounded-xl p-3 focus:outline-none focus:border-amber-500 transition-all font-bold text-amber-400 focus:text-amber-300 placeholder-amber-500/30" 
+                  placeholder="Ej. Principal"
+                  value={addressData.nombreVia}
+                  onChange={e => setAddressData({...addressData, nombreVia: e.target.value})}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-amber-500/70 uppercase tracking-widest px-2">Detalles (Urb, Bloque, Casa...)</label>
+                <textarea 
+                  rows={2}
+                  className="w-full bg-black/40 border border-amber-500/30 rounded-xl p-3 focus:outline-none focus:border-amber-500 transition-all font-bold text-amber-400 focus:text-amber-300 placeholder-amber-500/30 resize-none" 
+                  placeholder="Ej. Urb. Los Mangos, Bloque 5, Apto 23"
+                  value={addressData.detalle}
+                  onChange={e => setAddressData({...addressData, detalle: e.target.value})}
+                />
+              </div>
+
+              <button 
+                type="button"
+                onClick={() => {
+                  if (!addressData.tipoVia || !addressData.nombreVia.trim() || !addressData.detalle.trim()) {
+                    alert('Por favor completa todos los campos de la dirección (Tipo de Vía, Nombre y Detalles).');
+                    return;
+                  }
+                  const parts = [];
+                  if (addressData.tipoVia) parts.push(addressData.tipoVia);
+                  if (addressData.nombreVia) parts.push(addressData.nombreVia.trim());
+                  let combined = parts.join(' ');
+                  if (addressData.detalle) combined += combined ? `, ${addressData.detalle.trim()}` : addressData.detalle.trim();
+                  setRegDireccion(combined.trim());
+                  setShowAddressModal(false);
+                }}
+                className="w-full mt-4 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-black py-4 rounded-xl font-black uppercase tracking-[2px] shadow-[0_0_20px_rgba(251,191,36,0.3)] transition-all active:scale-95"
+              >
+                Confirmar Dirección
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
   </div>
 );
 };
 
 export default PublicCatalogScreen;
+
